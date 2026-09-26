@@ -1,26 +1,18 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml.Styling;
-using Avalonia.Styling;
-using Avalonia.Themes.Fluent;
+using Avalonia.Markup.Xaml;
 using ProDesigner.Core;
 
 namespace ProDesigner.Workbench;
 
-public sealed class DesignerApplication : Application
+public sealed partial class DesignerApplication : Application
 {
     public static Func<IWorkspaceService?>? WorkspaceFactory { get; set; }
     public static Func<ICodeService?>? CodeFactory { get; set; }
     public static Func<string, Control>? TrustedPreviewFactory { get; set; }
     public static DesignerWorkbench? Workbench { get; private set; }
-    public override void Initialize()
-    {
-        RequestedThemeVariant = ThemeVariant.Dark;
-        Styles.Add(new FluentTheme());
-        Styles.Add(new StyleInclude(new Uri("avares://ProDesigner.Workbench/")) { Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml") });
-        Styles.Add(new StyleInclude(new Uri("avares://ProDesigner.Workbench/")) { Source = new Uri("avares://ProDesigner.Workbench/Themes/Studio.axaml") });
-    }
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
     public override void OnFrameworkInitializationCompleted()
     {
         Workbench = new DesignerWorkbench(WorkspaceFactory?.Invoke(), CodeFactory?.Invoke(), TrustedPreviewFactory);
@@ -30,6 +22,7 @@ public sealed class DesignerApplication : Application
             desktop.Exit += (_, _) => Workbench.Dispose();
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime single) single.MainView = Workbench;
+        else if (ApplicationLifetime is ISingleTopLevelApplicationLifetime topLevel && topLevel.TopLevel is { } root) root.Content = Workbench;
         base.OnFrameworkInitializationCompleted();
     }
 }

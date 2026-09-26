@@ -20,7 +20,7 @@ internal static class StudioControls
     }
     public static TextBox Field(string? text = null, string? watermark = null)
     {
-        var field = new TextBox { Text = text, Watermark = watermark }; field.Classes.Add("field"); return field;
+        var field = new TextBox { Text = text, PlaceholderText = watermark }; field.Classes.Add("field"); return field;
     }
     public static Border Box(Control child, Thickness? padding = null) => new() { Child = child, Background = Panel, Padding = padding ?? new Thickness(12), BorderBrush = Line, BorderThickness = new(0, 0, 0, 1) };
     public static StackPanel Row(params Control[] children)
