@@ -12,7 +12,7 @@ MSBuild evaluation can execute imported tasks/targets. The desktop UI therefore 
 
 ## Runtime preview
 
-The desktop runtime preview invokes Avalonia's runtime XAML loader after a separate warning. It runs inside the desktop process and can execute XAML constructors/extensions. It is **not process-isolated**. Do not use it with untrusted files. The browser does not expose this capability. Building and loading a user's custom-control assemblies is not implemented in the initial host.
+The desktop runtime preview invokes Avalonia's runtime XAML loader after a separate warning. It runs inside the desktop process and can execute XAML constructors/extensions. It is **not process-isolated**. Do not use it with untrusted files. The browser does not expose this capability. The runtime-preview trust action can restore/build the associated project and load its assemblies. SDK processes use argument-list invocation, bounded output and a timeout/cancellation process-tree kill. Collectible assembly contexts are not security boundaries. Constructors, code-behind and dependencies remain fully trusted code.
 
 ## Local data
 

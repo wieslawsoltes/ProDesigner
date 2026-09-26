@@ -21,6 +21,7 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     {
         public string Name { get; set; } = name;
         public string? Path { get; set; }
+        public string? ProjectPath { get; set; }
         public DesignerSession Session { get; } = session;
         public AnimationClip Animation { get; } = new();
         public string CodeBehind { get; set; } = "";
@@ -28,7 +29,7 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     private readonly List<DocumentTab> _documents = [];
     private readonly IWorkspaceService? _workspace;
     private readonly ICodeService? _codeService;
-    private readonly Func<string, Control>? _trustedPreview;
+    private readonly Func<TrustedPreviewRequest, Task<TrustedPreview>>? _trustedPreview;
     private readonly XamlXSemanticService _semantics = new();
     private readonly DesignSurface _surface = new();
     private readonly EditorPane _editor = new();
@@ -43,21 +44,21 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     private readonly TextBlock _status = Text("Ready", 10, "#9DA5BC");
     private readonly TextBlock _statistics = Text("", 10, "#858C9F");
     private readonly TextBlock _zoomLabel = Text("80%", 11);
-    private readonly TextBox _layerFilter = Field(watermark: "Find a layer  ⌕");
+    private readonly TextBox _layerFilter = Field(watermark: "Search layers");
     private readonly DispatcherTimer _renderDebounce = new() { Interval = TimeSpan.FromMilliseconds(160) };
     private readonly Grid _center = new() { RowDefinitions = RowDefinitions.Parse("38,*,5,255") };
     private readonly TabControl _bottom = new();
     private readonly Grid _root = new() { RowDefinitions = RowDefinitions.Parse("50,44,*,25"), ColumnDefinitions = ColumnDefinitions.Parse("230,4,*,4,280") };
     private readonly Grid _overlay = new() { IsVisible = false, Background = Brush.Parse("#B0101218") };
     private DocumentTab _active = null!;
-    private bool _changing;
     private bool _disposed;
+    private CancellationTokenSource? _projectAnalysis;
     private string? _copiedFragment;
     public DesignerSession Session => _active.Session;
     public IReadOnlyList<DocumentTab> Documents => _documents;
     public DesignSurface Surface => _surface;
     public string ActiveDocumentName => _active.Name;
-    public DesignerWorkbench(IWorkspaceService? workspace = null, ICodeService? codeService = null, Func<string, Control>? trustedPreview = null)
+    public DesignerWorkbench(IWorkspaceService? workspace = null, ICodeService? codeService = null, Func<TrustedPreviewRequest, Task<TrustedPreview>>? trustedPreview = null)
     {
         _workspace = workspace; _codeService = codeService; _trustedPreview = trustedPreview;
         Classes.Add("studio"); Name = "DesignerWorkbench"; Focusable = true;
@@ -78,13 +79,13 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     private void BuildShell()
     {
         var title = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("230,*,Auto"), Background = Brush.Parse("#20222C") };
-        Place(title, Row(Text("◈", 26, "#C1AFF6"), Text(" ProDesigner", 16, "#ECE8F8")), 0, 0);
+        Place(title, Row(new StudioIcon { Kind = "diamond", Width = 24, Height = 24, VerticalAlignment = VerticalAlignment.Center }, Text(" ProDesigner", 16, "#ECE8F8")), 0, 0);
         title.Children[0].Margin = new(16, 0);
         Place(title, Row(Caption("AVALONIA"), Text(" / ", 12, "#5F6476"), Text("Untitled workspace", 12, "#AEB4C6")), 0, 1);
         var actions = Row(Button("⌘ K", "Open command palette", ShowCommandPalette), Button("Open", "Open XAML documents", () => _ = OpenDocumentsAsync()), Button("Save", "Save active document", () => _ = SaveDocumentAsync()), Button("▶ Preview", "Toggle interactive preview", TogglePreview, true));
         actions.Margin = new(8, 0, 14, 0); Place(title, actions, 0, 2); Place(_root, title, 0, 0, 5);
         var toolbar = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"), Background = Brush.Parse("#1B1D25") };
-        var tools = Row(Button("↖", "Select and move · V", () => _surface.SetInteractive(false)), Button("＋", "Insert Button", () => InsertControl("Button")), Button("T", "Insert TextBlock", () => InsertControl("TextBlock")), Button("□", "Insert Rectangle", () => InsertControl("Rectangle")), Button("○", "Insert Ellipse", () => InsertControl("Ellipse")), Text("│", 14, "#3F4352"), Button("↶", "Undo · Ctrl/Cmd Z", () => Execute("undo")), Button("↷", "Redo · Ctrl/Cmd Shift Z", () => Execute("redo")), Button("⫷", "Align left", () => Guard(() => _surface.Align(Alignment.Left))), Button("↔", "Distribute horizontally", () => Guard(() => _surface.Distribute(true))), Button("⇅", "Distribute vertically", () => Guard(() => _surface.Distribute(false))), Button("Devices", "Choose preview profiles", ShowProfiles), Button("Solution", "Open a trusted solution or project (desktop)", () => _ = OpenWorkspaceAsync()));
+        var tools = Row(Button("↖", "Select and move · V", () => _surface.SetInteractive(false)), Button("＋", "Insert Button", () => InsertControl("Button")), Button("T", "Insert TextBlock", () => InsertControl("TextBlock")), Button("□", "Insert Rectangle", () => InsertControl("Rectangle")), Button("○", "Insert Ellipse", () => InsertControl("Ellipse")), new Border { Width = 1, Height = 20, Background = Line, Margin = new Thickness(6,0) }, Button("↶", "Undo · Ctrl/Cmd Z", () => Execute("undo")), Button("↷", "Redo · Ctrl/Cmd Shift Z", () => Execute("redo")), Button("⫷", "Align left", () => Guard(() => _surface.Align(Alignment.Left))), Button("↔", "Distribute horizontally", () => Guard(() => _surface.Distribute(true))), Button("⇅", "Distribute vertically", () => Guard(() => _surface.Distribute(false))), Button("Devices", "Choose preview profiles", ShowProfiles), Button("Solution", "Open a trusted solution or project (desktop)", () => _ = OpenWorkspaceAsync()));
         tools.Margin = new(12, 0); Place(toolbar, tools, 0, 0);
         var zoom = Row(Button("−", "Zoom out", () => _surface.SetZoom(_surface.Zoom / 1.2)), _zoomLabel, Button("＋", "Zoom in", () => _surface.SetZoom(_surface.Zoom * 1.2)), Button("Fit", "Fit artboards", _surface.Fit));
         zoom.Margin = new(0, 0, 12, 0); Place(toolbar, zoom, 0, 1); Place(_root, toolbar, 1, 0, 5);
@@ -99,10 +100,10 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
         Place(tabBar, new ScrollViewer { Content = _tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden }, 0, 0);
         Place(tabBar, Button("＋", "New view", NewDocument), 0, 1); Place(_center, tabBar, 0, 0); Place(_center, _surface, 1, 0);
         Place(_center, new GridSplitter { ResizeDirection = GridResizeDirection.Rows, VerticalAlignment = VerticalAlignment.Stretch }, 2, 0);
-        _bottom.Items.Add(new TabItem { Header = "‹/› XAML", Content = _editor });
-        _bottom.Items.Add(new TabItem { Header = "◇ Animation", Content = _timeline });
-        _bottom.Items.Add(new TabItem { Header = "! Problems", Content = new ScrollViewer { Content = _problems } });
-        _bottom.Items.Add(new TabItem { Header = "◷ History", Content = new ScrollViewer { Content = _history } });
+        _bottom.Items.Add(new TabItem { Header = "XAML", Content = _editor });
+        _bottom.Items.Add(new TabItem { Header = "Animation", Content = _timeline });
+        _bottom.Items.Add(new TabItem { Header = "Problems", Content = new ScrollViewer { Content = _problems } });
+        _bottom.Items.Add(new TabItem { Header = "History", Content = new ScrollViewer { Content = _history } });
         Place(_center, _bottom, 3, 0); Place(_root, _center, 2, 2);
         Place(_root, new GridSplitter { ResizeDirection = GridResizeDirection.Columns, HorizontalAlignment = HorizontalAlignment.Stretch }, 2, 3);
         var right = new DockPanel(); var rightHeader = Box(Row(Text("Design", 12, "#CBBEF1"), Text("   Properties & layout", 10, "#747D91"))); DockPanel.SetDock(rightHeader, Dock.Top); right.Children.Add(rightHeader); right.Children.Add(_inspector); Place(_root, right, 2, 4);
@@ -120,17 +121,18 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     }
     private void DocumentChanged(DocumentChange change)
     {
-        if (_changing) return; RefreshTabs(); _renderDebounce.Stop(); _renderDebounce.Start();
+        RefreshTabs(); _renderDebounce.Stop(); _renderDebounce.Start();
     }
     private void SelectionChanged()
     {
-        if (_changing) return; _inspector.Rebuild(); RefreshLayers();
+        _inspector.Rebuild(); RefreshLayers();
         if (!_editor.IsKeyboardFocusWithin && Session.Primary is { } node) _editor.Navigate(node.NameSpan.Start, node.NameSpan.Length);
     }
     public void RefreshDocument()
     {
         if (_disposed) return;
         _surface.Rebuild(); RefreshLayers(); _inspector.Rebuild(); RefreshProblems();
+        _ = RefreshProjectDiagnosticsAsync();
         _history.Children.Clear(); foreach (var item in Session.History.Take(80)) _history.Children.Add(Text("↶ " + item, 11, "#9AA3B9"));
         _statistics.Text = $"{Session.Tree.Elements.Count} nodes   •   parse {Session.LastParseMilliseconds:0.0} ms   •   v{Session.Version}   •   {_documents.Count} views";
         if (!Session.IsValid) SetStatus("XAML has errors. The last valid preview is retained; visual edits are paused.");
@@ -190,6 +192,6 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     }
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; _renderDebounce.Stop(); _timeline.Stop(); _workspace?.Dispose();
+        if (_disposed) return; _disposed = true; _renderDebounce.Stop(); _timeline.Stop(); _projectAnalysis?.Cancel(); _projectAnalysis?.Dispose(); _workspace?.Dispose();
     }
 }

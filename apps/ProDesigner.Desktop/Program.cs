@@ -1,11 +1,8 @@
 using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
 using ProDesigner.Roslyn;
+using ProDesigner.Runtime;
 using ProDesigner.Workbench;
 using ProDesigner.Workspaces;
-using ProDesigner.Xaml;
-using ProDesigner.Core;
 
 namespace ProDesigner.Desktop;
 internal static class Program
@@ -16,19 +13,18 @@ internal static class Program
         try { WorkspaceBootstrap.Initialize(); DesignerApplication.WorkspaceFactory = WorkspaceBootstrap.Create; }
         catch (Exception ex) { Console.Error.WriteLine("MSBuild workspace unavailable: " + ex.Message); }
         DesignerApplication.CodeFactory = () => new RoslynCodeService();
-        DesignerApplication.TrustedPreviewFactory = source =>
+        var builder = new DotNetProjectBuilder(); var runtime = new RuntimePreviewEngine();
+        DesignerApplication.TrustedPreviewFactory = async request =>
         {
-            var tree = XamlSyntaxTree.Parse(source);
-            // Standalone preview does not pretend to have the user's compiled code-behind assembly.
-            if (tree.Root.Get("x:Class") is not null)
-                source = EditApplication.Apply(source, [XamlEdits.SetAttribute(tree, tree.Root, "x:Class", null)]);
-            var result = AvaloniaRuntimeXamlLoader.Load(source);
-            if (result is Window window)
+            string? assembly = null;
+            if (request.ProjectPath is not null)
             {
-                var content = window.Content as Control ?? throw new InvalidOperationException("The window has no visual content.");
-                window.Content = null; return content;
+                var build = await builder.BuildAsync(new(request.ProjectPath, request.Trusted));
+                if (!build.Success) throw new InvalidOperationException(string.Join("\n", build.Diagnostics.Select(d => d.Message)) + "\n" + build.Log);
+                assembly = build.AssemblyPath;
             }
-            return result as Control ?? throw new InvalidOperationException("The XAML root must be an Avalonia control.");
+            var preview = runtime.Load(request, assembly);
+            return new TrustedPreview(preview.Root, preview.Dispose);
         };
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

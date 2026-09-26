@@ -12,7 +12,7 @@ public sealed partial class DesignerApplication : Application
 {
     public static Func<IWorkspaceService?>? WorkspaceFactory { get; set; }
     public static Func<ICodeService?>? CodeFactory { get; set; }
-    public static Func<string, Control>? TrustedPreviewFactory { get; set; }
+    public static Func<TrustedPreviewRequest, Task<TrustedPreview>>? TrustedPreviewFactory { get; set; }
     public static DesignerWorkbench? Workbench { get; private set; }
     public override void Initialize()
     {

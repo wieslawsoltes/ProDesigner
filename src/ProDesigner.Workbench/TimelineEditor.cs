@@ -24,7 +24,7 @@ public sealed class TimelineEditor : UserControl
     private AnimationClip _clip = new();
     private DesignerSession? _session;
     private double _position;
-    public AnimationClip Clip => _clip;
+    public AnimationClip Animation => _clip;
     public event Action<AnimationClip, double>? Seeked;
     public event Action? ExportRequested;
     public event Action<string>? Status;
@@ -46,7 +46,7 @@ public sealed class TimelineEditor : UserControl
     }
     public void Attach(DesignerSession session, AnimationClip clip)
     {
-        Stop(); _session = session; _clip = clip; _canvas.Clip = clip; _duration.Text = LayoutEngine.Format(clip.DurationSeconds); _loop.IsChecked = clip.Loop; Seek(0);
+        Stop(); _session = session; _clip = clip; _canvas.Animation = clip; _duration.Text = LayoutEngine.Format(clip.DurationSeconds); _loop.IsChecked = clip.Loop; Seek(0);
     }
     public void Play()
     {
@@ -72,7 +72,7 @@ public sealed class TimelineEditor : UserControl
     }
     private sealed class TimelineCanvas : Control
     {
-        public AnimationClip Clip { get; set; } = new();
+        public AnimationClip Animation { get; set; } = new();
         public double Position { get; set; }
         public event Action<double>? SeekRequested;
         public event Action<AnimationTrack, double>? DeleteRequested;
@@ -84,9 +84,9 @@ public sealed class TimelineEditor : UserControl
                 var point = e.GetPosition(this);
                 var t = Math.Clamp((point.X - 215) / Math.Max(1, Bounds.Width - 240), 0, 1);
                 var row = (int)((point.Y - 34) / 30);
-                if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed && row >= 0 && row < Clip.Tracks.Count)
+                if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed && row >= 0 && row < Animation.Tracks.Count)
                 {
-                    var track = Clip.Tracks[row]; var key = track.Keys.OrderBy(k => Math.Abs(k.Time - t)).FirstOrDefault();
+                    var track = Animation.Tracks[row]; var key = track.Keys.OrderBy(k => Math.Abs(k.Time - t)).FirstOrDefault();
                     if (key is not null && Math.Abs(key.Time - t) < .025) DeleteRequested?.Invoke(track, key.Time);
                 }
                 else { SeekRequested?.Invoke(t); e.Pointer.Capture(this); }
@@ -103,13 +103,13 @@ public sealed class TimelineEditor : UserControl
             Text("ANIMATION TRACKS", 16, 10);
             for (var i = 0; i <= 10; i++)
             {
-                var x = 215 + i * width / 10; Text($"{i * Clip.DurationSeconds / 10:0.0}s", x, 10);
+                var x = 215 + i * width / 10; Text($"{i * Animation.DurationSeconds / 10:0.0}s", x, 10);
                 context.DrawLine(new Pen(Brush.Parse("#292D38"), 1), new(x, 28), new(x, Bounds.Height));
             }
-            if (Clip.Tracks.Count == 0) Text("Select a named layer, then add keyframes. Right-click a key to remove it.", 16, 52);
-            for (var i = 0; i < Clip.Tracks.Count; i++)
+            if (Animation.Tracks.Count == 0) Text("Select a named layer, then add keyframes. Right-click a key to remove it.", 16, 52);
+            for (var i = 0; i < Animation.Tracks.Count; i++)
             {
-                var y = 48 + i * 30; var track = Clip.Tracks[i]; Text(track.Target + " · " + track.Property, 16, y - 6);
+                var y = 48 + i * 30; var track = Animation.Tracks[i]; Text(track.Target + " · " + track.Property, 16, y - 6);
                 context.DrawLine(new Pen(Brush.Parse("#343447"), 2), new(215, y), new(215 + width, y));
                 foreach (var key in track.Keys)
                 {

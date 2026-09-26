@@ -24,14 +24,14 @@ ProDesigner brings visual editing and source authoring into one Avalonia workben
 
 | Workspace | Implemented behavior |
 | --- | --- |
-| Visual authoring | Multi-artboard preview, selection, Canvas dragging, bottom-right resize, grid/object snapping, guides, marquee selection, keyboard nudging, alignment and distribution commands. |
+| Visual authoring | Multi-artboard preview, selection, Canvas dragging, eight-handle resize, grid/object snapping, guides, marquee selection, keyboard nudging, alignment and distribution commands. |
 | Source model | Source-spanned XML/XAML concrete syntax tree, targeted changes, exact-source undo/redo, optimistic revision checks, atomic structural edits, preserved unknown syntax and comments. |
-| Language services | Real pinned XamlX parser integration, markup-extension syntax validation, Roslyn C# syntax diagnostics and event-handler generation; semantic member discovery and rename APIs in the reusable Roslyn package. |
+| Language services | Real pinned XamlX parser integration, markup-extension syntax validation, Roslyn C# syntax diagnostics and event-handler generation; project-bound XAML type/property/event diagnostics, semantic member discovery and rename APIs in the reusable Roslyn package. |
 | Inspector and editor | Multi-selection property editing, attached properties, arbitrary attribute input, binding/resource text, AvaloniaEdit syntax coloring, line numbers, find/replace, catalog completion, code-to-selection synchronization. |
 | Navigation | Multiple open views with independent history, sample view navigator, desktop XAML/solution/project file pickers, browser XAML import/export, device/theme profiles. |
-| Animation | Named-target numeric tracks, sorted/replaced keyframes, scrubbing, playback, looping, easing evaluation, cubic-Bezier solver, Avalonia Style/Animation XAML export. |
-| Project services | Explicit-trust MSBuildWorkspace loading, project-reference and metadata resolution through MSBuild, compilation diagnostics, source discovery, raw project/package inventory. |
-| Delivery | Nine packable libraries, desktop and WebAssembly hosts, cross-platform build/test jobs, browser interaction tests, release and Pages publishing workflows. |
+| Animation | Named-target numeric tracks, sorted/replaced keyframes, scrubbing, playback, looping, easing evaluation, cubic-Bezier solver, tested continuous-easing Avalonia Style/Animation spline export. |
+| Project services | Explicit-trust MSBuildWorkspace loading, project-reference and metadata resolution through MSBuild, compilation diagnostics, source discovery, cancellable SDK restore/build, raw project/package inventory. |
+| Delivery | Ten packable libraries, desktop and WebAssembly hosts, cross-platform build/test jobs, browser interaction tests, release and Pages publishing workflows. |
 
 ## Run the desktop application
 
@@ -71,7 +71,8 @@ Browser builds do not include Roslyn/MSBuild or execute custom XAML constructors
 | `ProDesigner.Design` | Document sessions, history, selection, layout geometry and control catalog. |
 | `ProDesigner.Animation` | Tracks, keyframes, interpolation, cubic-Bezier evaluation and XAML export. |
 | `ProDesigner.XamlX` | Pinned upstream XamlX parser integration with non-executing validation. |
-| `ProDesigner.Roslyn` | C# syntax, handler generation, semantic members, workspace symbol rename. |
+| `ProDesigner.Roslyn` | C# syntax, handler generation, project-bound XAML diagnostics, semantic members and workspace symbol rename. |
+| `ProDesigner.Runtime` | Explicitly trusted runtime XAML, compiled custom controls, code-behind roots and assembly-dependency resolution. |
 | `ProDesigner.Workspaces` | Trusted MSBuild solution/project loading and dependency diagnostics. |
 | `ProDesigner.Avalonia` | Real-control safe preview, source maps, artboards, interactive design surface. |
 | `ProDesigner.Workbench` | Embeddable workbench, code editor, property inspector and timeline controls. |
@@ -105,11 +106,11 @@ The test suite covers lexical edge cases, trivia preservation, stale and overlap
 
 ## Safety and trust
 
-Reading XAML is not the same as executing XAML. Safe preview instantiates only an explicit catalog of built-in Avalonia controls. MSBuild evaluation and runtime previews require separate affirmative actions. The initial runtime preview is **in-process, not a security sandbox**, and does not automatically build or load arbitrary user assemblies. See [SECURITY.md](SECURITY.md).
+Reading XAML is not the same as executing XAML. Safe preview instantiates only an explicit catalog of built-in Avalonia controls. MSBuild evaluation and runtime previews require separate affirmative actions. The initial runtime preview is **in-process, not a security sandbox**, and can restore/build and load the selected project only after the explicit runtime-preview trust action. See [SECURITY.md](SECURITY.md).
 
 ## Roadmap and contribution
 
-Professional parity is tracked explicitly in [docs/capabilities.md](docs/capabilities.md): compiler-backed project custom controls, process-isolated preview, full template/style/resource authoring, robust cross-file XAML/C# refactoring, advanced vector tools, constraints/components/variants, comprehensive animation import/export, virtualized large solutions, collaboration and accessibility coverage remain active work.
+Professional parity is tracked explicitly in [docs/capabilities.md](docs/capabilities.md): process-isolated project preview, full template/style/resource authoring, robust cross-file XAML/C# refactoring, advanced vector tools, constraints/components/variants, comprehensive animation import/export, virtualized large solutions, collaboration and accessibility coverage remain active work.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR. Keep services independent of the workbench, make unsupported behavior visible, and include source round-trip and UI regression tests with every new editor operation.
 

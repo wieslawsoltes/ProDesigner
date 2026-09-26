@@ -28,7 +28,7 @@ public class WorkbenchTests
     [AvaloniaFact] public void UnknownControlsAreVisibleAndNeverDiscarded()
     {
         var tree = XamlSyntaxTree.Parse("<custom:Widget xmlns:custom=\"using:Untrusted\" />");
-        var result = new PreviewBuilder().Build(tree, PreviewProfile.Defaults[0]); Assert.Contains(result.Diagnostics, d => d.Code == "PREVIEW001"); Assert.Equal(tree.Source, "<custom:Widget xmlns:custom=\"using:Untrusted\" />");
+        var result = new PreviewBuilder().Build(tree, PreviewProfile.Defaults[0]); Assert.Contains(result.Diagnostics, d => d.Code == "PREVIEW001"); Assert.Equal("<custom:Widget xmlns:custom=\"using:Untrusted\" />", tree.Source);
     }
     [AvaloniaFact] public void WorkbenchBindsCanvasPropertiesAndCodeToOneDocument()
     {

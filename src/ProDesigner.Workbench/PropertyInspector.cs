@@ -11,7 +11,7 @@ namespace ProDesigner.Workbench;
 public sealed class PropertyInspector : UserControl
 {
     private readonly StackPanel _body = new() { Spacing = 16, Margin = new(16) };
-    private readonly TextBox _filter = StudioControls.Field(watermark: "Filter properties  ⌕");
+    private readonly TextBox _filter = StudioControls.Field(watermark: "Search properties");
     private DesignerSession? _session;
     public event Action<string>? Status;
     public event Action<string>? GenerateHandler;

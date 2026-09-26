@@ -88,7 +88,7 @@ public sealed partial class DesignerWorkbench
                 content.Children.Add(new TextBlock { Text = $"{project.ProjectReferences.Count} project references · {project.Packages.Count} NuGet references", FontSize = 11, Foreground = Brush.Parse("#929DB5") });
                 foreach (var file in project.Files.Where(f => f.Kind is ".axaml" or ".xaml"))
                 {
-                    var button = Button("▧  " + file.Name, file.Path, () => { _overlay.IsVisible = false; _ = OpenWorkspaceFileAsync(file); });
+                    var button = Button("▧  " + file.Name, file.Path, () => { _overlay.IsVisible = false; _ = OpenWorkspaceFileAsync(file, project.Path); });
                     button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Left; content.Children.Add(button);
                 }
             }
@@ -99,14 +99,34 @@ public sealed partial class DesignerWorkbench
         }
         catch (Exception ex) { SetStatus("Workspace load failed: " + ex.Message); }
     }
-    private async Task OpenWorkspaceFileAsync(WorkspaceFile file)
+    private async Task OpenWorkspaceFileAsync(WorkspaceFile file, string projectPath)
     {
         try
         {
-            var text = await File.ReadAllTextAsync(file.Path); OpenDocument(Path.GetFileName(file.Path), text, file.Path);
+            var text = await File.ReadAllTextAsync(file.Path); OpenDocument(Path.GetFileName(file.Path), text, file.Path); _active.ProjectPath = projectPath;
             var codePath = file.Path + ".cs"; if (File.Exists(codePath)) _active.CodeBehind = await File.ReadAllTextAsync(codePath);
         }
         catch (Exception ex) { SetStatus("Open failed: " + ex.Message); }
+    }
+    private async Task RefreshProjectDiagnosticsAsync()
+    {
+        _projectAnalysis?.Cancel(); _projectAnalysis?.Dispose(); _projectAnalysis = null;
+        if (_workspace is null || _active.ProjectPath is null || !Session.IsValid) return;
+        var document = _active; var version = document.Session.Version; var source = document.Session.Source;
+        var cancellation = new CancellationTokenSource(); _projectAnalysis = cancellation;
+        try
+        {
+            var diagnostics = await Task.Run(() => _workspace.AnalyzeXamlAsync(document.ProjectPath, source, cancellation.Token), cancellation.Token);
+            if (_disposed || cancellation.IsCancellationRequested || document != _active || document.Session.Version != version) return;
+            foreach (var diagnostic in diagnostics.Take(100))
+            {
+                var button = Button($"{diagnostic.Code}   {diagnostic.Message}", diagnostic.Message, () => { _bottom.SelectedIndex = 0; _editor.Navigate(diagnostic.Offset, diagnostic.Length); });
+                button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Left; _problems.Children.Add(button);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+        catch (Exception ex) { if (!_disposed) SetStatus("Project XAML analysis: " + ex.Message); }
     }
     private void GenerateEventHandler(string name) => Guard(() =>
     {
@@ -146,16 +166,23 @@ public sealed partial class DesignerWorkbench
     }
     private void ShowTrustedPreview()
     {
-        if (_trustedPreview is null) { SetStatus("Runtime XAML execution is desktop-only. The browser uses a bounded built-in-control preview."); return; }
-        ShowDialog("Execute trusted XAML?", Column(new TextBlock
+        if (_trustedPreview is null) { SetStatus("Runtime XAML execution is desktop-only. The browser uses the non-executing built-in preview."); return; }
+        ShowDialog("Build and execute trusted XAML?", Column(new TextBlock
         {
-            Text = "Runtime XAML can execute constructors, markup extensions, converters, and event code. This preview runs in the desktop process, not a security sandbox. Only continue for XAML you trust.", TextWrapping = TextWrapping.Wrap
-        }, Button("Run trusted runtime preview", "Execute this XAML with Avalonia's XamlX runtime loader", () => Guard(() =>
+            Text = "Runtime preview can restore/build the selected project and execute its constructors, code-behind, converters, and markup extensions. It runs in this desktop process, not a security sandbox. Continue only for a project and dependencies you trust.", TextWrapping = TextWrapping.Wrap
+        }, Button("Run trusted runtime preview", "Build this project and execute its XAML", () => { _overlay.IsVisible = false; _ = OpenTrustedPreviewAsync(); }, true)));
+    }
+    private async Task OpenTrustedPreviewAsync()
+    {
+        try
         {
-            _overlay.IsVisible = false;
-            var preview = _trustedPreview(Session.Source);
-            var window = new Window { Title = "ProDesigner · trusted runtime preview", Width = 1000, Height = 720, Content = preview };
-            window.Show();
-        }), true)));
+            _editor.Flush(); var document = _active;
+            SetStatus(document.ProjectPath is null ? "Loading trusted XAML…" : "Restoring and building the trusted project…");
+            var preview = await _trustedPreview!(new(document.Session.Source, document.Path, document.ProjectPath, Trusted: true));
+            var window = new Window { Title = "ProDesigner · trusted project preview", Width = 1000, Height = 720, Content = preview.Root };
+            window.Closed += (_, _) => preview.Dispose(); window.Show();
+            SetStatus("Trusted runtime preview opened. Project execution is not sandboxed.");
+        }
+        catch (Exception ex) { SetStatus("Runtime preview failed: " + ex.GetBaseException().Message); }
     }
 }

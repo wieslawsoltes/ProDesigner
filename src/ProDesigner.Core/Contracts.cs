@@ -24,6 +24,7 @@ public interface IWorkspaceService : IDisposable
 {
     Task<IReadOnlyList<ProjectSummary>> OpenAsync(string path, bool trusted, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DesignDiagnostic>> GetDiagnosticsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DesignDiagnostic>> AnalyzeXamlAsync(string projectPath, string source, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<DesignDiagnostic>>([]);
 }
 public sealed record CompletionItem(string Label, string Kind, string? Detail = null);
 public interface ICodeService

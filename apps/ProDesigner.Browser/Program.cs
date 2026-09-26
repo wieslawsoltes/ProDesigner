@@ -28,6 +28,13 @@ public static partial class Program
         return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
     [JSExport]
+    public static string Bounds(string name)
+    {
+        var rect = DesignerApplication.Workbench?.Surface.GetElementBounds(name);
+        if (rect is not { } value) return "null";
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{{\"x\":{value.X},\"y\":{value.Y},\"width\":{value.Width},\"height\":{value.Height}}}");
+    }
+    [JSExport]
     public static void Command(string command) => DesignerApplication.Workbench?.Execute(command);
     [JSExport]
     public static void Select(string name) => DesignerApplication.Workbench?.SelectByName(name);

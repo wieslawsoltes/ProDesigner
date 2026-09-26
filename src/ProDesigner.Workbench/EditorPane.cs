@@ -31,7 +31,7 @@ public sealed class EditorPane : UserControl
             Name = "XamlEditor", ShowLineNumbers = true, FontSize = 12,
             FontFamily = new FontFamily("Cascadia Code, Consolas, Menlo, monospace"),
             Background = Brush.Parse("#14161D"), Foreground = Brush.Parse("#CED3E2"),
-            SyntaxHighlighting = HighlightingManager.Instance.GetDefinition("XML"),
+            SyntaxHighlighting = StudioHighlighting.Xaml,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
         _editor.Options.ConvertTabsToSpaces = true; _editor.Options.IndentationSize = 2;

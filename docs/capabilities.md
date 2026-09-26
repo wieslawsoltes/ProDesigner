@@ -9,21 +9,21 @@ This ledger is part of the product contract. **Implemented** means code exists w
 | Undo/redo and stale edit guard | Implemented | Bounded source snapshots; not cross-file transactional undo. |
 | Structural insert/delete/duplicate/reparent APIs | Implemented | Property-element semantics, namescope/reference remapping and identity reconciliation need expansion. |
 | XamlX integration | Implemented, restricted | Actual pinned parser and markup-extension syntax; no full Avalonia/project type binding in safe mode. |
-| Roslyn editing engine | Implemented, restricted | Syntax diagnostics, event generation, member/rename library APIs; semantic rename UI pending. |
-| Solution/project loading | Implemented, desktop | Trusted MSBuild evaluation, graph/metadata, compilation diagnostics; no automatic restore/build or package UI. |
+| Roslyn editing engine | Implemented, restricted | Syntax diagnostics, event generation, project-bound XAML types/properties/events, member/rename APIs; cross-file rename UI pending. |
+| Solution/project loading | Implemented, desktop | Trusted MSBuild evaluation, graph/metadata, compilation diagnostics; explicit cancellable runtime-preview restore/build; no package-management UI. |
 | Dependency resolution | Restricted | MSBuild-resolvable local project environment; missing SDKs/packages reported, not fabricated. |
 | Device/theme artboards | Implemented | Real control rendering and multiple widths/themes; localization/DPI matrix pending. |
 | Selection and outline | Implemented | Shift selection, outline, source mapping; non-virtualized tree, no collapse/reparent drag UI yet. |
-| Dragging and resizing | Restricted | Canvas drag; bottom-right resize. Other visible handles are adorners, not all-direction resize tools. |
+| Dragging and resizing | Restricted | Canvas dragging, multi-selection moves, eight resize handles, aspect constraint, cancellation and pointer regression tests. Automatic layout still controls non-Canvas positioning. |
 | Alignment/distribution/snapping | Implemented, restricted | Same-Canvas siblings; no full Figma constraint model. |
 | Auto layout editing | Restricted | Avalonia layout attributes; not Figma auto-layout/constraint conversion. |
 | Code editor | Implemented, restricted | AvaloniaEdit, highlighting, find/replace, catalog completion; no full XAML language server. |
 | Property inspector | Implemented, restricted | Text-based scalar/attached properties; rich brush/gradient/geometry editors pending. |
 | Bindings/resources | Restricted | Text editing, local scalar resources, simple sample-data binding in safe preview. |
-| Custom controls and code-behind preview | Pending | Standalone trusted runtime loader exists, but solution compilation/assembly loading/isolation is not wired. |
+| Custom controls and code-behind preview | Implemented, desktop | Explicit trusted SDK restore/build, assembly resolver, parameterless code-behind root and real runtime XAML; process isolation, application resources and code hot-reload remain pending. |
 | Templates, themes, styles and visual states | Pending authoring | Source retained; runtime preview may render them; dedicated visual editors pending. |
 | Animation timeline | Implemented, restricted | Scalar named-target tracks, playback/scrub, key insertion/deletion; no persisted timeline project model yet. |
-| Animation XAML export | Restricted | Values/cues exported; segment easing fidelity and import pending. |
+| Animation XAML export | Restricted | Continuous scalar easing exported with tested KeySpline fidelity; Step export is explicitly rejected. Import remains pending. |
 | Vector/path editing and booleans | Pending | Basic Rectangle/Ellipse insertion only. |
 | Components, variants and design systems | Pending | Not equivalent to Figma components/variants. |
 | Prototype links and interaction flows | Pending | Interactive built-in controls only; no flow graph. |

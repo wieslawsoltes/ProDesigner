@@ -2,6 +2,7 @@
 
 - **XamlX** — https://github.com/kekekeks/XamlX — MIT. Pinned submodule revision: 7ef6aef496ab6e8dcf3df04bef697be49db37c04. Its source is compiled internally into ProDesigner.XamlX; its original LICENSE is included in that NuGet package.
 - **Avalonia** and **AvaloniaEdit** — https://github.com/AvaloniaUI — MIT. Referenced as NuGet packages; see their distributed notices.
+- **Inter** — distributed through Avalonia.Fonts.Inter; its upstream font license applies.
 - **Roslyn**, **MSBuild Locator** and the .NET SDK — https://github.com/dotnet — their respective upstream licenses apply.
 - **xUnit**, **Microsoft.NET.Test.Sdk**, **Avalonia.Headless.XUnit** and **Playwright** are development/test dependencies under their upstream licenses.
 

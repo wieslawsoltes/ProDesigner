@@ -42,7 +42,7 @@ public class EngineTests
     {
         var clip = new AnimationClip { DurationSeconds = 1.5 }; var track = clip.GetTrack("Card", "Opacity"); track.SetKey(0, 0); track.SetKey(1, 1);
         var xml = XElement.Parse(clip.ToAvaloniaStyles()); Assert.Equal("Style", xml.Name.LocalName); Assert.Equal("#Card", xml.Attribute("Selector")!.Value);
-        Assert.Equal("00:00:01.5000000", xml.Descendants("Animation").Single().Attribute("Duration")!.Value); Assert.Equal(2, xml.Descendants("KeyFrame").Count());
+        Assert.Equal("00:00:01.5000000", xml.Descendants("Animation").Single().Attribute("Duration")!.Value); Assert.Equal(3, xml.Descendants("KeyFrame").Count());
     }
     [Fact] public void RoslynGenerationPreservesExistingCommentsAndIsIdempotent()
     {
@@ -54,7 +54,7 @@ public class EngineTests
     [Fact] public void RoslynReportsSyntaxLocations() => Assert.NotEmpty(new RoslynCodeService().Validate("class {"));
     [Fact] public async Task UntrustedWorkspaceDoesNotEvaluateProjects()
     {
-        using var workspace = new SolutionWorkspace(); await Assert.ThrowsAsync<UnauthorizedAccessException>(() => workspace.OpenAsync("not-a-file.csproj", false));
+        using var workspace = new SolutionWorkspace(); await Assert.ThrowsAsync<UnauthorizedAccessException>(() => workspace.OpenAsync("not-a-file.csproj", false, TestContext.Current.CancellationToken));
     }
     [Fact] public void ProjectInspectionFindsSourcesReferencesAndFrameworks()
     {

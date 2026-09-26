@@ -37,7 +37,7 @@ public sealed class SolutionWorkspace : IWorkspaceService
         {
             _workspace?.Dispose(); _diagnostics.Clear();
             _workspace = MSBuildWorkspace.Create(new Dictionary<string, string> { ["Configuration"] = "Debug" });
-            _workspace.WorkspaceFailed += (_, args) => _diagnostics.Enqueue(new("MSBUILD001", args.Diagnostic.Message, Severity.Warning, File: path));
+            _workspace.RegisterWorkspaceFailedHandler(args => _diagnostics.Enqueue(new("MSBUILD001", args.Diagnostic.Message, Severity.Warning, File: path)), null);
             _workspace.LoadMetadataForReferencedProjects = false;
             if (extension == ".csproj") await _workspace.OpenProjectAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
             else await _workspace.OpenSolutionAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -61,6 +61,18 @@ public sealed class SolutionWorkspace : IWorkspaceService
                         d.Location.SourceSpan.Start, d.Location.SourceSpan.Length, d.Location.SourceTree?.FilePath)));
             }
             return result;
+        }
+        finally { _gate.Release(); }
+    }
+    public async Task<IReadOnlyList<DesignDiagnostic>> AnalyzeXamlAsync(string projectPath, string source, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var project = _workspace?.CurrentSolution.Projects.FirstOrDefault(p => string.Equals(p.FilePath, projectPath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+            if (project is null) return [new("PROJECT001", "The project is not loaded in the Roslyn workspace.", Severity.Warning)];
+            var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
+            return compilation is null ? [] : new ProDesigner.Roslyn.XamlCompilationService().Analyze(source, compilation).Diagnostics;
         }
         finally { _gate.Release(); }
     }

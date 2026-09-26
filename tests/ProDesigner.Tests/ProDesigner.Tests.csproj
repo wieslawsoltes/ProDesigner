@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/ProDesigner.Runtime/ProDesigner.Runtime.csproj" />
+    <ProjectReference Include="../Fixtures/PreviewProject/PreviewProject.csproj" />
     <ProjectReference Include="../../src/ProDesigner.Workbench/ProDesigner.Workbench.csproj" />
     <ProjectReference Include="../../src/ProDesigner.Roslyn/ProDesigner.Roslyn.csproj" />
     <ProjectReference Include="../../src/ProDesigner.Workspaces/ProDesigner.Workspaces.csproj" />

@@ -58,6 +58,16 @@ public sealed class DesignSurface : UserControl
         SetZoom(Math.Min(1, Math.Max(300, Bounds.Width) / width));
         _scroll.Offset = default;
     }
+    public DesignRect? GetElementBounds(string name)
+    {
+        var control = _frames.FirstOrDefault()?.FindByName(name);
+        var root = TopLevel.GetTopLevel(this);
+        if (control is null || root is null) return null;
+        var a = control.TranslatePoint(default, root);
+        var b = control.TranslatePoint(new Point(control.Bounds.Width, control.Bounds.Height), root);
+        return a is { } start && b is { } end ? new(start.X, start.Y, end.X - start.X, end.Y - start.Y) : null;
+    }
+    public void CancelGesture() { foreach (var frame in _frames) frame.CancelGesture(); }
     public void SetInteractive(bool interactive)
     {
         Interactive = interactive;
@@ -104,14 +114,18 @@ public sealed class DesignSurface : UserControl
 
 internal sealed class PreviewFrame : Grid
 {
+    private sealed record GestureItem(Control Control, DesignRect Bounds, double Width, double Height, double Left, double Top, bool CanvasChild);
     private readonly DesignerSession _session;
     private readonly PreviewResult _preview;
     private readonly SelectionOverlay _overlay;
+    private readonly Dictionary<string, GestureItem> _initial = [];
     private Point _start;
     private string? _dragId;
-    private DesignRect _initial;
-    private bool _resize;
+    private string? _marqueeParent;
+    private ResizeEdges _resize;
     private long _version;
+    private IPointer? _pointer;
+    private bool _moved;
     public event Action<string>? Status;
     public PreviewFrame(DesignerSession session, PreviewResult preview, PreviewProfile profile)
     {
@@ -122,17 +136,22 @@ internal sealed class PreviewFrame : Grid
         _overlay.PointerPressed += Pressed;
         _overlay.PointerMoved += Moved;
         _overlay.PointerReleased += Released;
-        _overlay.PointerCaptureLost += (_, _) => { _dragId = null; _overlay.Marquee = null; _overlay.InvalidateVisual(); };
+        _overlay.PointerCaptureLost += (_, _) => CancelGesture();
         LayoutUpdated += (_, _) => RefreshSelection();
     }
-    public void SetInteractive(bool value) { _overlay.IsVisible = !value; _preview.Root.IsHitTestVisible = value; }
+    public Control? FindByName(string name)
+    {
+        var node = _session.Tree.Elements.FirstOrDefault(n => n.DisplayName == name);
+        return node is not null ? _preview.Controls.GetValueOrDefault(node.Id) : null;
+    }
+    public void SetInteractive(bool value) { CancelGesture(); _overlay.IsVisible = !value; _preview.Root.IsHitTestVisible = value; }
     public Dictionary<string, DesignRect> GetBounds()
     {
         var result = new Dictionary<string, DesignRect>();
         foreach (var pair in _preview.Controls)
         {
             var p = pair.Value.TranslatePoint(default, this);
-            if (p is { } point) result[pair.Key] = new(point.X, point.Y, pair.Value.Bounds.Width, pair.Value.Bounds.Height);
+            if (p is { } point && pair.Value.IsVisible) result[pair.Key] = new(point.X, point.Y, pair.Value.Bounds.Width, pair.Value.Bounds.Height);
         }
         return result;
     }
@@ -150,77 +169,120 @@ internal sealed class PreviewFrame : Grid
     }
     private void Pressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(_overlay).Properties.IsLeftButtonPressed) return;
-        _start = e.GetPosition(this); _version = _session.Version;
-        var bounds = GetBounds();
-        var primary = _session.Primary;
-        _resize = primary is not null && bounds.TryGetValue(primary.Id, out var selected) &&
-            Math.Abs(_start.X - selected.Right) < 9 && Math.Abs(_start.Y - selected.Bottom) < 9;
-        var hit = _resize ? primary : _session.Tree.Elements.LastOrDefault(n => !n.IsProperty && bounds.TryGetValue(n.Id, out var r) && _start.X >= r.X && _start.X <= r.Right && _start.Y >= r.Y && _start.Y <= r.Bottom);
-        if (hit is not null)
+        if (!e.GetCurrentPoint(_overlay).Properties.IsLeftButtonPressed || !_session.IsValid) return;
+        CancelGesture(); _start = e.GetPosition(this); _version = _session.Version;
+        var bounds = GetBounds(); var primary = _session.Primary;
+        _resize = primary is not null && bounds.TryGetValue(primary.Id, out var selected) ? ResizeGeometry.HitTest(selected, _start.X, _start.Y) : ResizeEdges.None;
+        var hit = _resize != ResizeEdges.None ? primary : _session.Tree.Elements.LastOrDefault(n => !n.IsProperty && bounds.TryGetValue(n.Id, out var rect) && _start.X >= rect.X && _start.X <= rect.Right && _start.Y >= rect.Y && _start.Y <= rect.Bottom);
+        var additive = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+        if (_resize == ResizeEdges.None && hit is not null && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
         {
-            if (!_resize) _session.Select(hit.Id, (e.KeyModifiers & KeyModifiers.Shift) != 0);
-            _dragId = hit.Id; _initial = bounds[hit.Id];
+            for (var parent = hit; parent.Parent is not null; parent = parent.Parent)
+                if (parent.Parent.LocalName == "Canvas") { hit = parent; break; }
         }
-        else { _session.Select(null); _overlay.Marquee = new(_start.X, _start.Y, 0, 0); }
-        e.Pointer.Capture(_overlay); e.Handled = true;
+        if (hit is null || (_resize == ResizeEdges.None && (hit.LocalName == "Canvas" || hit.Parent is null)))
+        {
+            if (!additive) _session.Select(null);
+            _marqueeParent = hit?.LocalName == "Canvas" ? hit.Id : null;
+            _overlay.Marquee = new(_start.X, _start.Y, 0, 0);
+        }
+        else
+        {
+            if (_resize == ResizeEdges.None && (additive || !_session.Selection.Contains(hit.Id))) _session.Select(hit.Id, additive);
+            _dragId = hit.Id;
+            var nodes = _resize != ResizeEdges.None ? new[] { hit } : _session.SelectedRoots().ToArray();
+            foreach (var node in nodes)
+                if (_preview.Controls.TryGetValue(node.Id, out var control) && bounds.TryGetValue(node.Id, out var rect))
+                    _initial[node.Id] = new(control, rect, control.Width, control.Height, Canvas.GetLeft(control), Canvas.GetTop(control), node.Parent?.LocalName == "Canvas");
+        }
+        _pointer = e.Pointer; e.Pointer.Capture(_overlay); e.Handled = true;
     }
     private void Moved(object? sender, PointerEventArgs e)
     {
         if (e.Pointer.Captured != _overlay) return;
         var point = e.GetPosition(this); var delta = point - _start;
+        _moved |= Math.Abs(delta.X) + Math.Abs(delta.Y) > 2;
         if (_dragId is null)
         {
             _overlay.Marquee = new(Math.Min(point.X, _start.X), Math.Min(point.Y, _start.Y), Math.Abs(delta.X), Math.Abs(delta.Y));
             _overlay.InvalidateVisual(); return;
         }
-        if (!_preview.Controls.TryGetValue(_dragId, out var control)) return;
-        if (_resize)
+        if (!_initial.TryGetValue(_dragId, out var initial)) return;
+        var bounds = GetBounds();
+        var parent = _session.Tree.Find(_dragId)?.Parent;
+        var origin = parent is null ? default : bounds.GetValueOrDefault(parent.Id);
+        if (_resize != ResizeEdges.None)
         {
-            control.Width = Math.Max(8, LayoutEngine.Snap(_initial.Width + delta.X));
-            control.Height = Math.Max(8, LayoutEngine.Snap(_initial.Height + delta.Y));
+            var local = initial.Bounds with { X = initial.Bounds.X - origin.X, Y = initial.Bounds.Y - origin.Y };
+            var resized = ResizeGeometry.Resize(local, _resize, delta.X, delta.Y, (e.KeyModifiers & KeyModifiers.Alt) == 0, (e.KeyModifiers & KeyModifiers.Shift) != 0);
+            initial.Control.Width = resized.Width; initial.Control.Height = resized.Height;
+            if (initial.CanvasChild) { Canvas.SetLeft(initial.Control, resized.X); Canvas.SetTop(initial.Control, resized.Y); }
         }
-        else if (_session.Tree.Find(_dragId)?.Parent?.LocalName == "Canvas")
+        else if (initial.CanvasChild && parent is not null)
         {
-            var parent = _session.Tree.Find(_dragId)!.Parent!;
-            var bounds = GetBounds();
-            var other = parent.Children.Where(c => c.Id != _dragId && bounds.ContainsKey(c.Id)).Select(c => bounds[c.Id]);
-            var snap = LayoutEngine.SnapToObjects(new(_initial.X + delta.X, _initial.Y + delta.Y, _initial.Width, _initial.Height), other);
-            var origin = bounds.GetValueOrDefault(parent.Id);
-            Canvas.SetLeft(control, snap.X - origin.X); Canvas.SetTop(control, snap.Y - origin.Y);
+            var other = parent.Children.Where(n => !_initial.ContainsKey(n.Id) && bounds.ContainsKey(n.Id)).Select(n => bounds[n.Id]);
+            var moving = new DesignRect(initial.Bounds.X + delta.X, initial.Bounds.Y + delta.Y, initial.Bounds.Width, initial.Bounds.Height);
+            var snap = (e.KeyModifiers & KeyModifiers.Alt) != 0 ? new SnapResult(moving.X, moving.Y, [], []) : LayoutEngine.SnapToObjects(moving, other, grid: 0);
+            var x = snap.VerticalGuides.Count > 0 || (e.KeyModifiers & KeyModifiers.Alt) != 0 ? snap.X - origin.X : LayoutEngine.Snap(snap.X - origin.X);
+            var y = snap.HorizontalGuides.Count > 0 || (e.KeyModifiers & KeyModifiers.Alt) != 0 ? snap.Y - origin.Y : LayoutEngine.Snap(snap.Y - origin.Y);
+            var dx = x - (initial.Bounds.X - origin.X); var dy = y - (initial.Bounds.Y - origin.Y);
+            foreach (var pair in _initial.Where(p => p.Value.CanvasChild))
+            {
+                var item = pair.Value; var itemParent = _session.Tree.Find(pair.Key)?.Parent;
+                var parentOrigin = itemParent is null ? default : bounds.GetValueOrDefault(itemParent.Id);
+                Canvas.SetLeft(item.Control, item.Bounds.X - parentOrigin.X + dx);
+                Canvas.SetTop(item.Control, item.Bounds.Y - parentOrigin.Y + dy);
+            }
             _overlay.VerticalGuides = snap.VerticalGuides; _overlay.HorizontalGuides = snap.HorizontalGuides;
         }
         RefreshSelection();
     }
     private void Released(object? sender, PointerReleasedEventArgs e)
     {
-        var id = _dragId; _dragId = null;
+        if (e.Pointer.Captured != _overlay) return;
         try
         {
-            if (id is not null && _session.Tree.Find(id) is { } node && _preview.Controls.TryGetValue(id, out var control))
+            if (_dragId is not null && _moved)
             {
-                var delta = e.GetPosition(this) - _start;
-                if (Math.Abs(delta.X) + Math.Abs(delta.Y) > 2)
+                var edits = new List<TextEdit>();
+                foreach (var pair in _initial)
                 {
-                    if (_resize)
-                        _session.Apply("Resize " + node.DisplayName, [XamlEdits.SetAttribute(_session.Tree, node, "Width", LayoutEngine.Format(control.Width)), XamlEdits.SetAttribute(_session.Tree, node, "Height", LayoutEngine.Format(control.Height))], _version);
-                    else if (node.Parent?.LocalName == "Canvas")
-                        _session.Apply("Move " + node.DisplayName, [XamlEdits.SetAttribute(_session.Tree, node, "Canvas.Left", LayoutEngine.Format(Canvas.GetLeft(control))), XamlEdits.SetAttribute(_session.Tree, node, "Canvas.Top", LayoutEngine.Format(Canvas.GetTop(control)))], _version);
-                    else Status?.Invoke("This control uses automatic layout. Edit its Margin, Grid placement, or parent layout instead.");
+                    var node = _session.Tree.Find(pair.Key); if (node is null) continue;
+                    var item = pair.Value;
+                    if (_resize != ResizeEdges.None)
+                    {
+                        edits.Add(XamlEdits.SetAttribute(_session.Tree, node, "Width", LayoutEngine.Format(item.Control.Width)));
+                        edits.Add(XamlEdits.SetAttribute(_session.Tree, node, "Height", LayoutEngine.Format(item.Control.Height)));
+                    }
+                    if (item.CanvasChild)
+                    {
+                        edits.Add(XamlEdits.SetAttribute(_session.Tree, node, "Canvas.Left", LayoutEngine.Format(Canvas.GetLeft(item.Control))));
+                        edits.Add(XamlEdits.SetAttribute(_session.Tree, node, "Canvas.Top", LayoutEngine.Format(Canvas.GetTop(item.Control))));
+                    }
                 }
+                if (edits.Count > 0) _session.Apply(_resize != ResizeEdges.None ? "Resize selection" : "Move selection", edits, _version);
+                else Status?.Invoke("This control uses automatic layout. Edit its layout properties to reposition it.");
             }
-            else if (_overlay.Marquee is { } marquee)
+            else if (_overlay.Marquee is { } marquee && _moved)
             {
-                _session.Select(null);
-                foreach (var pair in GetBounds().Where(p => p.Value.Intersects(marquee) && _session.Tree.Find(p.Key)?.Parent?.LocalName == "Canvas")) _session.Select(pair.Key, true);
+                foreach (var pair in GetBounds().Where(p => p.Value.Intersects(marquee) && _session.Tree.Find(p.Key)?.Parent?.Id == _marqueeParent))
+                    if (!_session.Selection.Contains(pair.Key)) _session.Select(pair.Key, true);
             }
+            _initial.Clear(); // Successful commit: capture loss must not roll back the preview.
         }
         catch (InvalidOperationException ex) { Status?.Invoke(ex.Message); }
-        finally
+        finally { CancelGesture(); e.Handled = true; }
+    }
+    public void CancelGesture()
+    {
+        foreach (var item in _initial.Values)
         {
-            _overlay.Marquee = null; _overlay.VerticalGuides = []; _overlay.HorizontalGuides = [];
-            e.Pointer.Capture(null); RefreshSelection();
+            item.Control.Width = item.Width; item.Control.Height = item.Height;
+            if (item.CanvasChild) { Canvas.SetLeft(item.Control, item.Left); Canvas.SetTop(item.Control, item.Top); }
         }
+        _initial.Clear(); _dragId = null; _marqueeParent = null; _resize = ResizeEdges.None; _moved = false;
+        _overlay.Marquee = null; _overlay.VerticalGuides = []; _overlay.HorizontalGuides = [];
+        var pointer = _pointer; _pointer = null; pointer?.Capture(null); RefreshSelection();
     }
 }
 internal sealed class SelectionOverlay : Control

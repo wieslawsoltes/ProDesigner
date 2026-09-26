@@ -40,3 +40,11 @@ Initialize `WorkspaceBootstrap.Initialize()` before any MSBuild assembly is load
 ## Distribution
 
 Each src project is independently packable. Do not distribute private signing material or repository tokens. The release workflow builds a source archive, desktop distributions and library packages; it pushes to NuGet only when `NUGET_API_KEY` exists in the publishing environment. Application hosts are not NuGet libraries.
+
+## Trusted project runtime
+
+`ProDesigner.Workspaces.DotNetProjectBuilder` accepts a `ProjectBuildRequest` containing the project path, configuration, optional target framework, and an explicit trust flag. It invokes the installed SDK to restore/build, resolves TargetPath through MSBuild, bounds captured output and terminates the process tree on cancellation or timeout.
+
+`ProDesigner.Runtime.RuntimePreviewEngine.Load` accepts a trusted source request plus an optional compiled assembly path. Call it on the Avalonia UI thread. Keep its `RuntimePreviewLease` alive while displaying the returned control; dispose the lease when its window closes. It resolves managed/native project dependencies and shares Avalonia host assemblies. Collectible contexts are lifecycle aids, not security boundaries or guaranteed immediate unloading.
+
+`ProDesigner.Roslyn.XamlCompilationService.Analyze` combines the source-preserving tree with a Roslyn Compilation, returning source-spanned diagnostics and bound member descriptors. This validates project types/properties/events; it does not replace all Avalonia compiler transforms or markup-extension value semantics.

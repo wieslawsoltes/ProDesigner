@@ -6,7 +6,7 @@ try {
   const exports = await runtime.getAssemblyExports(config.mainAssemblyName);
   const api = exports.ProDesigner.Browser.Program;
   window.prodesigner = {
-    state: () => JSON.parse(api.Snapshot()), command: command => api.Command(command),
+    state: () => JSON.parse(api.Snapshot()), bounds: name => JSON.parse(api.Bounds(name)), command: command => api.Command(command),
     select: name => api.Select(name), setProperty: (name, value) => api.SetProperty(name, value),
     insert: name => api.Insert(name), setSource: source => api.SetSource(source)
   };

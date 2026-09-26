@@ -101,7 +101,7 @@ public sealed partial class DesignerWorkbench
             else if (e.Key == Key.V && !_editor.IsKeyboardFocusWithin && e.Source is not TextBox) { Execute("paste"); e.Handled = true; }
             return;
         }
-        if (e.Key == Key.Escape) { _overlay.IsVisible = false; _surface.SetInteractive(false); return; }
+        if (e.Key == Key.Escape) { _overlay.IsVisible = false; _surface.CancelGesture(); _surface.SetInteractive(false); return; }
         if (_editor.IsKeyboardFocusWithin || _inspector.IsKeyboardFocusWithin || e.Source is TextBox) return;
         if (e.Key is Key.Delete or Key.Back) { Execute("delete"); e.Handled = true; }
         else if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)

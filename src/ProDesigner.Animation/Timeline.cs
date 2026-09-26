@@ -78,11 +78,18 @@ public sealed class AnimationClip
             foreach (var track in target)
             {
                 sb.AppendLine($"    <Animation Duration=\"{duration}\" IterationCount=\"{(Loop ? "INFINITE" : "1")}\" FillMode=\"Forward\">");
-                foreach (var key in track.Keys)
+                for (var index = 0; index < track.Keys.Count; index++)
                 {
-                    sb.AppendLine($"      <KeyFrame Cue=\"{(key.Time * 100).ToString("0.####", CultureInfo.InvariantCulture)}%\">");
-                    sb.AppendLine($"        <Setter Property=\"{XamlEdits.Escape(track.Property)}\" Value=\"{key.Value.ToString("R", CultureInfo.InvariantCulture)}\" />");
-                    sb.AppendLine("      </KeyFrame>");
+                    var key = track.Keys[index];
+                    if (index > 0 && key.Easing == EasingKind.Step)
+                        throw new InvalidOperationException("Step interpolation cannot be exported faithfully as a numeric Avalonia spline. Choose a continuous easing before export.");
+                    if (index > 0 && key.Easing == EasingKind.EaseInOut)
+                    {
+                        var previous = track.Keys[index - 1];
+                        AppendKey(sb, track.Property, (previous.Time + key.Time) / 2, (previous.Value + key.Value) / 2, EasingKind.EaseIn);
+                        AppendKey(sb, track.Property, key.Time, key.Value, EasingKind.EaseOut);
+                    }
+                    else AppendKey(sb, track.Property, key.Time, key.Value, index == 0 ? EasingKind.Linear : key.Easing);
                 }
                 sb.AppendLine("    </Animation>");
             }
@@ -90,4 +97,17 @@ public sealed class AnimationClip
         }
         return sb.ToString();
     }
+    private static void AppendKey(StringBuilder builder, string property, double time, double value, EasingKind easing)
+    {
+        var spline = easing switch
+        {
+            EasingKind.EaseIn => "0.3333333333333333,0,0.6666666666666666,0",
+            EasingKind.EaseOut => "0.3333333333333333,1,0.6666666666666666,1",
+            _ => "0,0,1,1"
+        };
+        builder.AppendLine($"      <KeyFrame Cue=\"{(time * 100).ToString("0.########", CultureInfo.InvariantCulture)}%\" KeySpline=\"{spline}\">");
+        builder.AppendLine($"        <Setter Property=\"{XamlEdits.Escape(property)}\" Value=\"{value.ToString("R", CultureInfo.InvariantCulture)}\" />");
+        builder.AppendLine("      </KeyFrame>");
+    }
+
 }

@@ -14,6 +14,8 @@ flowchart TD
   Animation --> Xaml
   XamlX --> Xaml
   Xaml --> Core[ProDesigner.Core]
+  Desktop --> Runtime[ProDesigner.Runtime]
+  Runtime --> Xaml
   Desktop --> Roslyn[ProDesigner.Roslyn]
   Desktop --> Workspaces[ProDesigner.Workspaces]
   Roslyn --> Core
@@ -36,13 +38,13 @@ PreviewBuilder creates only known Avalonia control types. It maps source node ID
 
 DesignSurface composes PreviewFrames, scrolling and zoom. Each frame overlays selection adorners and handles source-linked gestures. Automatic-layout controls retain their layout semantics. Free positioning, object guides, and alignment/distribution are restricted to Canvas. The preview is rebuilt after debounced source changes; selection overlays update independently.
 
-Desktop trusted runtime preview uses Avalonia.Markup.Xaml.Loader, which executes XAML through Avalonia's XamlX pipeline. It is deliberately explicit and currently in-process. It is not a custom-control build host, a sandbox, or a substitute for the safe browser renderer.
+Desktop trusted runtime preview uses Avalonia.Markup.Xaml.Loader, which executes XAML through Avalonia's XamlX pipeline. It is deliberately explicit and currently in-process. The desktop host now combines a cancellable SDK builder with the standalone runtime library to load project controls and code-behind roots. AssemblyDependencyResolver and a collectible load context resolve project dependencies while sharing the host’s Avalonia assemblies. This is not a sandbox or a guarantee of immediate unloading; global framework caches can retain references. Application-wide resources, incompatible Avalonia major versions, isolated processes and code hot-reload need further work.
 
 ## Roslyn and project resolution
 
-RoslynCodeService provides syntax diagnostics, structural handler insertion, compilation member discovery and semantic rename returning a changed Solution. The first UI exposes syntax diagnostics and handler generation. Cross-file rename application and transactional XAML/C# refactoring remain unintegrated.
+RoslynCodeService provides syntax diagnostics, structural handler insertion, compilation member discovery and semantic rename returning a changed Solution. The UI exposes syntax diagnostics, handler generation and asynchronous project-bound XAML diagnostics. XamlCompilationService resolves concrete syntax nodes to Roslyn project/reference symbols and reports unknown types, properties, attached properties and event handlers without executing them. It is not the complete Avalonia XamlX transform pipeline. Cross-file rename application and transactional XAML/C# refactoring remain unintegrated.
 
-WorkspaceBootstrap registers MSBuild before creating the workspace. SolutionWorkspace uses MSBuildWorkspace to load an evaluated solution and referenced projects and exposes compilation diagnostics. Its project inventory also reports raw XML framework/reference declarations; conditional and centrally managed values in that inventory are not advertised as fully evaluated metadata. Evaluation requires affirmative trust because imported targets can execute code. Automatic restore/build and package-management UI are not implemented.
+WorkspaceBootstrap registers MSBuild before creating the workspace. SolutionWorkspace uses MSBuildWorkspace to load an evaluated solution and referenced projects and exposes compilation diagnostics. Its project inventory also reports raw XML framework/reference declarations; conditional and centrally managed values in that inventory are not advertised as fully evaluated metadata. Evaluation requires affirmative trust because imported targets can execute code. An explicit runtime-preview action can restore/build through DotNetProjectBuilder, using argument-list process invocation, bounded logs, cancellation and a timeout. Package-management UI and framework selection UI remain pending.
 
 ## Performance strategy
 

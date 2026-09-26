@@ -19,6 +19,18 @@ test('real Avalonia WASM workbench: boot, source edits, history, insertion, erro
   await page.evaluate(() => { window.prodesigner.select('DashboardCanvas'); window.prodesigner.insert('Button'); });
   expect((await state()).source).toContain('x:Name="Button1"');
   await page.waitForTimeout(500);
+  await page.evaluate(() => window.prodesigner.select('RevenueCard'));
+  const bounds = await page.evaluate(() => window.prodesigner.bounds('RevenueCard'));
+  expect(bounds).not.toBeNull();
+  const beforeDrag = (await state()).source;
+  await page.mouse.move(bounds.x + 16, bounds.y + 16);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 40, bounds.y + 32, { steps: 6 });
+  await page.mouse.up();
+  expect((await state()).source).not.toBe(beforeDrag);
+  await page.evaluate(() => window.prodesigner.command('undo'));
+  expect((await state()).source).toBe(beforeDrag);
+  await page.waitForTimeout(500);
   await page.screenshot({ path: testInfo.outputPath('prodesigner-desktop.png'), fullPage: true });
   const valid = await state();
   await page.evaluate(() => window.prodesigner.setSource('<UserControl>'));
