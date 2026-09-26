@@ -1,9 +1,6 @@
 name: Offline validation kit
 on:
   workflow_dispatch:
-  push:
-    branches: [feat/prodesigner-studio]
-    paths: ['.github/workflows/offline-validation.yml']
 permissions:
   contents: read
 jobs:
