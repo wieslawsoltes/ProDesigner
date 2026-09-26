@@ -1,0 +1,35 @@
+name: Offline validation kit
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/prodesigner-studio]
+    paths: ['.github/workflows/offline-validation.yml']
+permissions:
+  contents: read
+jobs:
+  kit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore only public dependencies
+        run: dotnet restore ProDesigner.slnx --source https://api.nuget.org/v3/index.json
+      - name: Capture public SDK and packages for offline regression testing
+        run: |
+          mkdir -p /tmp/prodesigner-validation
+          VERSION=$(dotnet --version)
+          curl --fail --location --retry 3 "https://builds.dotnet.microsoft.com/dotnet/Sdk/$VERSION/dotnet-sdk-$VERSION-linux-x64.tar.gz" -o /tmp/prodesigner-validation/dotnet-sdk-linux-x64.tar.gz
+          tar -czf /tmp/prodesigner-validation/nuget-public-packages.tar.gz -C "$HOME/.nuget" packages
+          dotnet --info > /tmp/prodesigner-validation/toolchain.txt
+          sha256sum /tmp/prodesigner-validation/*.tar.gz > /tmp/prodesigner-validation/checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-validation-kit
+          path: /tmp/prodesigner-validation/
+          compression-level: 0
+          retention-days: 3
