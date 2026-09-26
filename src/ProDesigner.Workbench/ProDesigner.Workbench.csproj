@@ -1,1 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../ProDesigner.Avalonia/ProDesigner.Avalonia.csproj" /><ProjectReference Include="../ProDesigner.XamlX/ProDesigner.XamlX.csproj" /><PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" /><PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../ProDesigner.Avalonia/ProDesigner.Avalonia.csproj" />
+    <ProjectReference Include="../ProDesigner.XamlX/ProDesigner.XamlX.csproj" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
+  </ItemGroup>
+</Project>

@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Fonts.Inter;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using ProDesigner.Core;
 
 namespace ProDesigner.Workbench;
@@ -12,7 +14,11 @@ public sealed partial class DesignerApplication : Application
     public static Func<ICodeService?>? CodeFactory { get; set; }
     public static Func<string, Control>? TrustedPreviewFactory { get; set; }
     public static DesignerWorkbench? Workbench { get; private set; }
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        FontManager.Current.AddFontCollection(new InterFontCollection());
+        AvaloniaXamlLoader.Load(this);
+    }
     public override void OnFrameworkInitializationCompleted()
     {
         Workbench = new DesignerWorkbench(WorkspaceFactory?.Invoke(), CodeFactory?.Invoke(), TrustedPreviewFactory);

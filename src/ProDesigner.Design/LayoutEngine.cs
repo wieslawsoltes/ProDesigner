@@ -54,6 +54,7 @@ public static class LayoutEngine
         if (nodes.Select(n => n.Parent?.Id).Distinct().Count() != 1 || nodes[0].Parent?.LocalName != "Canvas")
             throw new InvalidOperationException("Alignment requires siblings inside the same Canvas.");
         var union = DesignRect.Union(nodes.Select(n => bounds[n.Id]));
+        var parentBounds = bounds.GetValueOrDefault(nodes[0].Parent!.Id);
         var edits = new List<TextEdit>();
         foreach (var node in nodes)
         {
@@ -65,7 +66,7 @@ public static class LayoutEngine
                 Alignment.Right => union.Right - rect.Width, Alignment.Top => union.Y,
                 Alignment.VerticalCenter => union.Y + (union.Height - rect.Height) / 2, _ => union.Bottom - rect.Height
             };
-            edits.Add(XamlEdits.SetAttribute(tree, node, horizontal ? "Canvas.Left" : "Canvas.Top", Format(value)));
+            edits.Add(XamlEdits.SetAttribute(tree, node, horizontal ? "Canvas.Left" : "Canvas.Top", Format(value - (horizontal ? parentBounds.X : parentBounds.Y))));
         }
         return edits;
     }
@@ -75,13 +76,14 @@ public static class LayoutEngine
         if (nodes.Length < 3) return [];
         if (nodes.Select(n => n.Parent?.Id).Distinct().Count() != 1 || nodes[0].Parent?.LocalName != "Canvas") throw new InvalidOperationException("Distribution requires Canvas siblings.");
         var first = bounds[nodes[0].Id]; var last = bounds[nodes[^1].Id];
+        var parentBounds = bounds.GetValueOrDefault(nodes[0].Parent!.Id);
         var total = nodes.Sum(n => horizontal ? bounds[n.Id].Width : bounds[n.Id].Height);
         var start = horizontal ? first.X : first.Y;
         var gap = ((horizontal ? last.Right : last.Bottom) - start - total) / (nodes.Length - 1);
         var position = start; var edits = new List<TextEdit>();
         foreach (var node in nodes)
         {
-            edits.Add(XamlEdits.SetAttribute(tree, node, horizontal ? "Canvas.Left" : "Canvas.Top", Format(position)));
+            edits.Add(XamlEdits.SetAttribute(tree, node, horizontal ? "Canvas.Left" : "Canvas.Top", Format(position - (horizontal ? parentBounds.X : parentBounds.Y))));
             position += (horizontal ? bounds[node.Id].Width : bounds[node.Id].Height) + gap;
         }
         return edits;

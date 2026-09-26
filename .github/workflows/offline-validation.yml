@@ -10,7 +10,7 @@ jobs:
   kit:
     runs-on: ubuntu-latest
     env:
-      NUGET_PACKAGES: ${{ runner.temp }}/prodesigner-packages
+      NUGET_PACKAGES: /tmp/prodesigner-packages
     steps:
       - uses: actions/checkout@v4
         with:

@@ -14,8 +14,15 @@ internal static class StudioControls
     public static TextBlock Caption(string text) { var label = Text(text, 10); label.Classes.Add("caption"); return label; }
     public static Button Button(string text, string tooltip, Action action, bool accent = false)
     {
-        var button = new Button { Content = text, VerticalAlignment = VerticalAlignment.Center };
-        button.Classes.Add(accent ? "accent" : "chrome"); ToolTip.SetTip(button, tooltip); AutomationProperties.SetName(button, tooltip);
+        var (icon, label) = StudioIcon.SplitLabel(text);
+        object content = text;
+        if (icon is not null)
+        {
+            var symbol = new StudioIcon { Kind = icon, VerticalAlignment = VerticalAlignment.Center, Stroke = Brush.Parse(accent ? "#342C48" : "#B9B3CC") };
+            content = label.Length == 0 ? symbol : Row(symbol, new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+        }
+        var button = new Button { Content = content, VerticalAlignment = VerticalAlignment.Center };
+        button.Classes.Add(accent ? "studio-primary" : "chrome"); ToolTip.SetTip(button, tooltip); AutomationProperties.SetName(button, tooltip);
         button.Click += (_, _) => action(); return button;
     }
     public static TextBox Field(string? text = null, string? watermark = null)
