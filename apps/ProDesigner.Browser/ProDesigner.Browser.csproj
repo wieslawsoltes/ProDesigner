@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><WasmEnableThreads>false</WasmEnableThreads><IsPackable>false</IsPackable><InvariantGlobalization>false</InvariantGlobalization><WasmBuildNative>false</WasmBuildNative><RunAOTCompilation>false</RunAOTCompilation></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/ProDesigner.Workbench/ProDesigner.Workbench.csproj" /><PackageReference Include="Avalonia.Browser" Version="$(AvaloniaVersion)" /></ItemGroup>
+</Project>
