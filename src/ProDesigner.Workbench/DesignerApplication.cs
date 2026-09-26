@@ -22,7 +22,6 @@ public sealed partial class DesignerApplication : Application
             desktop.Exit += (_, _) => Workbench.Dispose();
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime single) single.MainView = Workbench;
-        else if (ApplicationLifetime is ISingleTopLevelApplicationLifetime topLevel && topLevel.TopLevel is { } root) root.Content = Workbench;
         base.OnFrameworkInitializationCompleted();
     }
 }
