@@ -39,7 +39,7 @@ This ledger is part of the product contract. **Implemented** means code exists w
 
 ### Compiler-backed project host
 
-Persist an evaluated, virtualized solution model; add cancellable restore/build, target-framework selection, assembly dependency resolution and a supervised preview process. Keep execution permission separate from read-only metadata. Reconcile source nodes with runtime objects and project symbols without relying on structural paths alone.
+Persist an evaluated, virtualized solution model; extend the existing cancellable restore/build and assembly-resolution services with target-framework selection UI, full application resources and a supervised preview process. Keep execution permission separate from read-only metadata. Reconcile source nodes with runtime objects and project symbols without relying on structural paths alone.
 
 ### Fidelity and safe editing
 
