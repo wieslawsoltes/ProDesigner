@@ -40,7 +40,8 @@ public sealed class PreviewBuilder
         var host = new Border
         {
             Width = profile.Width, Height = profile.Height, Background = Brush.Parse(profile.Dark ? "#15171E" : "#FFFFFF"),
-            RequestedThemeVariant = profile.Dark ? ThemeVariant.Dark : ThemeVariant.Light, Child = root, ClipToBounds = true
+            Child = new ThemeVariantScope { RequestedThemeVariant = profile.Dark ? ThemeVariant.Dark : ThemeVariant.Light, Child = root },
+            ClipToBounds = true
         };
         return new(host, new Dictionary<string, Control>(_controls), _diagnostics.ToArray());
     }
@@ -78,12 +79,17 @@ public sealed class PreviewBuilder
         {
             if (!child.IsProperty) { children.Add(child); continue; }
             var member = child.LocalName[(child.LocalName.IndexOf('.') + 1)..];
-            if (member is "Children" or "Child" or "Content" or "Items") children.AddRange(child.Children);
-            else if (member == "RowDefinitions" && control is Grid rowGrid)
-                foreach (var row in child.Children) rowGrid.RowDefinitions.Add(new RowDefinition(GridLength.Parse(row.Get("Height") ?? "*")));
-            else if (member == "ColumnDefinitions" && control is Grid columnGrid)
-                foreach (var column in child.Children) columnGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse(column.Get("Width") ?? "*")));
-            else if (member is not "Resources") Warn(child, "PREVIEW004", $"{child.LocalName} is retained. Use trusted runtime preview for styles, templates, and animations.");
+            try
+            {
+                if (member is "Children" or "Child" or "Content" or "Items") children.AddRange(child.Children);
+                else if (member == "RowDefinitions" && control is Grid rowGrid)
+                    foreach (var row in child.Children) rowGrid.RowDefinitions.Add(new RowDefinition(GridLength.Parse(row.Get("Height") ?? "*")));
+                else if (member == "ColumnDefinitions" && control is Grid columnGrid)
+                    foreach (var column in child.Children) columnGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Parse(column.Get("Width") ?? "*")));
+                else if (member is not "Resources") Warn(child, "PREVIEW004", $"{child.LocalName} is retained. Use trusted runtime preview for styles, templates, and animations.");
+            }
+            catch (Exception ex) when (ex is FormatException or ArgumentException or OverflowException)
+            { Warn(child, "PREVIEW003", ex.Message); }
         }
         foreach (var childNode in children)
         {
@@ -187,7 +193,7 @@ public sealed class PreviewBuilder
                 if (c is Border crb) crb.CornerRadius = CornerRadius.Parse(value); else if (c is TemplatedControl crc) crc.CornerRadius = CornerRadius.Parse(value); else return false; return true;
             case "Text" when c is TextBlock text: text.Text = value; return true;
             case "Text" when c is TextBox input: input.Text = value; return true;
-            case "Watermark" when c is TextBox input: input.Watermark = value; return true;
+            case "Watermark" or "PlaceholderText" when c is TextBox input: input.PlaceholderText = value; return true;
             case "AcceptsReturn" when c is TextBox input: input.AcceptsReturn = bool.Parse(value); return true;
             case "TextWrapping" when c is TextBlock text: text.TextWrapping = E<TextWrapping>(value); return true;
             case "TextAlignment" when c is TextBlock text: text.TextAlignment = E<TextAlignment>(value); return true;
