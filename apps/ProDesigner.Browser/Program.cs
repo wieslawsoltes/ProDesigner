@@ -28,6 +28,11 @@ public static partial class Program
             writer.WriteStartObject(); writer.WriteBoolean("ready", true); writer.WriteString("document", workbench.ActiveDocumentName);
             writer.WriteNumber("version", workbench.Session.Version); writer.WriteNumber("nodes", workbench.Session.Tree.Elements.Count);
             writer.WriteBoolean("valid", workbench.Session.IsValid); writer.WriteString("source", workbench.Session.Source);
+            writer.WriteString("release", typeof(DesignerWorkbench).Assembly.GetName().Version?.ToString());
+            writer.WriteString("syntaxUpdate", workbench.Session.LastSyntaxUpdate.ToString());
+            writer.WriteString("previewUpdate", workbench.Surface.LastRefresh.ToString());
+            writer.WriteNumber("fullPreviewBuilds", workbench.Surface.FullBuildCount);
+            writer.WriteNumber("previewDeltas", workbench.Surface.PropertyDeltaCount);
             writer.WriteNumber("documents", workbench.Documents.Count); writer.WriteBoolean("canUndo", workbench.Session.CanUndo);
             writer.WriteEndObject();
         }

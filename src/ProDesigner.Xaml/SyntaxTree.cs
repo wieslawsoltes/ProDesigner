@@ -7,6 +7,14 @@ namespace ProDesigner.Xaml;
 public sealed record XamlAttribute(string Name, string Value, SourceSpan Span, SourceSpan ValueSpan, char Quote);
 public sealed class XamlElement
 {
+    private static long _nextIdentity;
+    private readonly List<XamlElement> _children = [];
+    private readonly List<XamlAttribute> _attributes = [];
+    public XamlElement() { Children = _children.AsReadOnly(); Attributes = _attributes.AsReadOnly(); }
+    /// <summary>Process-local logical identity retained by incremental edits and unambiguous structural reconciliation.</summary>
+    public long Identity { get; internal set; } = Interlocked.Increment(ref _nextIdentity);
+    internal void AddChild(XamlElement child) => _children.Add(child);
+    internal void AddAttribute(XamlAttribute attribute) => _attributes.Add(attribute);
     public required string Name { get; init; }
     public required string Id { get; init; }
     public required SourceSpan NameSpan { get; init; }
@@ -15,8 +23,8 @@ public sealed class XamlElement
     public SourceSpan CloseSpan { get; internal set; }
     public bool SelfClosing { get; internal set; }
     public XamlElement? Parent { get; internal set; }
-    public List<XamlElement> Children { get; } = [];
-    public List<XamlAttribute> Attributes { get; } = [];
+    public IReadOnlyList<XamlElement> Children { get; }
+    public IReadOnlyList<XamlAttribute> Attributes { get; }
     public string LocalName => Name[(Name.LastIndexOf(':') + 1)..];
     public bool IsProperty => LocalName.Contains('.');
     public string? Get(string name) => Attributes.FirstOrDefault(a => a.Name == name)?.Value;
@@ -30,19 +38,22 @@ public sealed class XamlElement
 }
 
 /// <summary>A source-preserving concrete syntax tree. Semantic analysis is supplied independently by XamlX.</summary>
-public sealed class XamlSyntaxTree
+public sealed partial class XamlSyntaxTree
 {
     public const int MaximumLength = 8 * 1024 * 1024;
     private readonly Dictionary<string, XamlElement> _index;
+    private readonly Dictionary<long, XamlElement> _identities;
     public string Source { get; }
     public XamlElement Root { get; }
     public IReadOnlyList<XamlElement> Elements { get; }
     public string NewLine => Source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
     private XamlSyntaxTree(string source, XamlElement root)
     {
-        Source = source; Root = root; Elements = root.DescendantsAndSelf().ToArray();
+        Source = source; Root = root; Elements = Array.AsReadOnly(root.DescendantsAndSelf().ToArray());
         _index = Elements.ToDictionary(e => e.Id);
+        _identities = Elements.ToDictionary(e => e.Identity);
     }
+    public XamlElement? FindIdentity(long identity) => _identities.GetValueOrDefault(identity);
     public XamlElement? Find(string? id) => id is null ? null : _index.GetValueOrDefault(id);
     public XamlElement? At(int offset)
     {
@@ -90,7 +101,7 @@ public sealed class XamlSyntaxTree
                 Name = source[nameStart..i], NameSpan = new(nameStart, i - nameStart),
                 Id = parent is null ? "0" : $"{parent.Id}/{parent.Children.Count}", Parent = parent, Span = new(start, 0)
             };
-            if (parent is null) root = node; else parent.Children.Add(node);
+            if (parent is null) root = node; else parent.AddChild(node);
             while (i < source.Length)
             {
                 while (char.IsWhiteSpace(source[i])) i++;
@@ -106,7 +117,7 @@ public sealed class XamlSyntaxTree
                 while (source[i] != quote) i++;
                 var raw = source[valueStart..i];
                 i++;
-                node.Attributes.Add(new(name, WebUtility.HtmlDecode(raw.Replace("\r\n", " ").Replace('\n', ' ').Replace('\r', ' ').Replace('\t', ' ')),
+                node.AddAttribute(new(name, WebUtility.HtmlDecode(raw.Replace("\r\n", " ").Replace('\n', ' ').Replace('\r', ' ').Replace('\t', ' ')),
                     new(attrStart, i - attrStart), new(valueStart, raw.Length), quote));
             }
             node.SelfClosing = source[i] == '/';

@@ -19,6 +19,7 @@ public sealed class DesignerSession
     public XamlSyntaxTree Tree { get; private set; }
     public long Version { get; private set; }
     public double LastParseMilliseconds { get; private set; }
+    public SyntaxUpdateKind LastSyntaxUpdate { get; private set; } = SyntaxUpdateKind.FullParse;
     public bool IsValid { get; private set; } = true;
     public bool IsDirty => Source != _savedSource;
     public bool CanUndo => _undo.Count > 0;
@@ -77,28 +78,21 @@ public sealed class DesignerSession
         SelectionChanged?.Invoke();
     }
     public void SetSource(string source, string label = "Edit XAML", bool mergeTyping = false)
+    => ChangeSource(source, label, mergeTyping);
+    private void ChangeSource(string source, string label, bool mergeTyping, XamlSyntaxUpdate? prepared = null, double? elapsed = null)
     {
         if (source == Source) return;
         if (!mergeTyping || _undo.Count == 0 || _undo[^1].Label != label || Environment.TickCount64 - _lastTypingTick > 1000) PushUndo(label);
         _lastTypingTick = mergeTyping ? Environment.TickCount64 : 0;
-        _redo.Clear(); Load(source, label);
+        _redo.Clear(); Load(source, label, prepared, elapsed);
     }
     public void Apply(string label, IEnumerable<TextEdit> edits, long? expectedVersion = null)
     {
         if (!IsValid) throw new InvalidOperationException("Correct the XAML errors before using visual tools.");
         if (expectedVersion is { } version && version != Version) throw new InvalidOperationException("This edit targets an outdated document revision.");
-        var changes = edits.ToArray();
-        var oldSelection = SelectedElements().Select(e => (e.Span.Start, e.Name)).ToArray();
-        var source = EditApplication.Apply(Source, changes);
-        XamlSyntaxTree.Parse(source);
-        SetSource(source, label); _selection.Clear();
-        foreach (var (offset, name) in oldSelection)
-        {
-            if (changes.Any(e => e.Span.Length > 0 && e.Span.Contains(offset) && e.NewText.Length == 0)) continue;
-            var mapped = offset + changes.Where(e => e.Span.End <= offset).Sum(e => e.NewText.Length - e.Span.Length);
-            var node = Tree.At(mapped); if (node is not null && node.Name == name) _selection.Add(node.Id);
-        }
-        SelectionChanged?.Invoke();
+        var watch = Stopwatch.StartNew();
+        var update = Tree.ApplyEdits(edits);
+        ChangeSource(update.Tree.Source, label, false, update, watch.Elapsed.TotalMilliseconds);
     }
     public void SetProperty(string name, string? value)
     {
@@ -149,14 +143,19 @@ public sealed class DesignerSession
     }
     private void Restore(SourceHistoryEntry state, string label)
     {
-        Tree = XamlSyntaxTree.Parse(state.ValidSource); Load(state.Source, label); _selection.Clear();
+        Tree = Tree.WithText(state.ValidSource).Tree; Load(state.Source, label); _selection.Clear();
         foreach (var id in state.Selection.Where(id => Tree.Find(id) is not null)) _selection.Add(id);
         SelectionChanged?.Invoke();
     }
-    private void Load(string source, string label)
+    private void Load(string source, string label, XamlSyntaxUpdate? prepared = null, double? elapsed = null)
     {
+        var identities = SelectedElements().Select(n => n.Identity).ToArray();
         Source = source; Version++; var watch = Stopwatch.StartNew();
-        try { Tree = XamlSyntaxTree.Parse(source); IsValid = true; Diagnostics = []; }
+        try
+        {
+            var update = prepared ?? Tree.WithText(source); Tree = update.Tree; LastSyntaxUpdate = update.Kind; IsValid = true; Diagnostics = [];
+            _selection.Clear(); foreach (var identity in identities) if (Tree.FindIdentity(identity) is { } node) _selection.Add(node.Id);
+        }
         catch (XmlException ex)
         {
             IsValid = false;
@@ -164,7 +163,7 @@ public sealed class DesignerSession
             var offset = lines.Take(Math.Max(0, ex.LineNumber - 1)).Sum(l => l.Length + 1) + Math.Max(0, ex.LinePosition - 1);
             Diagnostics = [new("XAML001", ex.Message, DiagnosticSeverity.Error, Math.Min(source.Length, offset), 1)];
         }
-        LastParseMilliseconds = watch.Elapsed.TotalMilliseconds;
+        LastParseMilliseconds = elapsed ?? watch.Elapsed.TotalMilliseconds;
         if (IsValid) _selection.RemoveWhere(id => Tree.Find(id) is null);
         Changed?.Invoke(new(Version, label, Source)); SelectionChanged?.Invoke();
     }

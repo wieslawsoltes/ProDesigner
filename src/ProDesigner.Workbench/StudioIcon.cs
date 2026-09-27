@@ -7,7 +7,7 @@ namespace ProDesigner.Workbench;
 /// <summary>Resolution-independent workbench iconography; no symbol-font dependency.</summary>
 public sealed class StudioIcon : Control
 {
-    private static readonly IReadOnlyDictionary<string, Geometry> Paths = new Dictionary<string, string>
+    private static readonly IReadOnlyDictionary<string, global::Avalonia.Media.Geometry> Paths = new Dictionary<string, string>
     {
         ["select"] = "M3,2 L13,9 L8,10 L6,15 Z M8,10 L12,15",
         ["plus"] = "M8,2 L8,14 M2,8 L14,8",
@@ -33,7 +33,7 @@ public sealed class StudioIcon : Control
         ["input"] = "M2,4 L14,4 L14,12 L2,12 Z M5,6 L5,10",
         ["list"] = "M2,3 L3,3 M6,3 L14,3 M2,8 L3,8 M6,8 L14,8 M2,13 L3,13 M6,13 L14,13",
         ["toggle"] = "M5,4 L11,4 A4,4 0 0 1 11,12 L5,12 A4,4 0 0 1 5,4 Z M11,6 L11,10"
-    }.ToDictionary(p => p.Key, p => Geometry.Parse(p.Value));
+    }.ToDictionary(p => p.Key, p => global::Avalonia.Media.Geometry.Parse(p.Value));
     private static readonly IReadOnlyDictionary<string, string> Symbols = new Dictionary<string, string>
     {
         ["↖"] = "select", ["＋"] = "plus", ["+"] = "plus", ["−"] = "minus", ["T"] = "text", ["□"] = "rectangle", ["○"] = "ellipse",

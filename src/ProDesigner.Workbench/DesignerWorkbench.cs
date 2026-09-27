@@ -74,6 +74,7 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
         Classes.Add("studio"); Name = "DesignerWorkbench"; Focusable = true;
         BuildShell();
         InitializeRecovery();
+        AttachedToVisualTree += async (_, _) => await CheckFileJournalsAsync();
         foreach (var sample in Samples.Documents) _documents.Add(new(sample.Key, new DesignerSession(sample.Value)));
         var clip = _documents[0].Animation; var track = clip.GetTrack("RevenueCard", "Opacity"); track.SetKey(0, .15); track.SetKey(1, 1);
         SwitchDocument(_documents[0]);
@@ -130,7 +131,7 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
         Place(_root, left, 2, 0); Place(_root, new GridSplitter { ResizeDirection = GridResizeDirection.Columns, HorizontalAlignment = HorizontalAlignment.Stretch }, 2, 1);
         var tabBar = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"), Background = Brush.Parse("#20222B") };
         Place(tabBar, new ScrollViewer { Content = _tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden }, 0, 0);
-        Place(tabBar, Button("＋", "New view", NewDocument), 0, 1); Place(_center, tabBar, 0, 0); Place(_center, _surface, 1, 0);
+        Place(tabBar, Button("＋", "New view", NewDocument), 0, 1); Place(_center, tabBar, 0, 0); InitializeEmbeddedPreview(); Place(_center, _artboards, 1, 0);
         Place(_center, new GridSplitter { ResizeDirection = GridResizeDirection.Rows, VerticalAlignment = VerticalAlignment.Stretch }, 2, 0);
         _bottom.Items.Add(new TabItem { Header = "XAML", Content = _editor });
         _bottom.Items.Add(new TabItem { Header = "Animation", Content = _timeline });
@@ -145,6 +146,7 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     }
     public void SwitchDocument(DocumentTab document)
     {
+        HideEmbeddedPreview();
         _editor.Flush(); _timeline.Stop();
         if (_active is not null) { _active.Session.Changed -= DocumentChanged; _active.Session.SelectionChanged -= SelectionChanged; }
         _collapsedLayers.Clear(); _active = document; _active.Session.Changed += DocumentChanged; _active.Session.SelectionChanged += SelectionChanged;
@@ -234,6 +236,6 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     }
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; _recoveryTimer.Stop(); _previewCancellation?.Cancel(); _ = StopExternalPreviewAsync(); _renderDebounce.Stop(); _timeline.Stop(); _projectAnalysis?.Cancel(); _projectAnalysis?.Dispose(); _workspace?.Dispose();
+        if (_disposed) return; _disposed = true; _runtimeTimer.Stop(); _runtimeSurface.Dispose(); _recoveryTimer.Stop(); _previewCancellation?.Cancel(); _ = StopExternalPreviewAsync(); _renderDebounce.Stop(); _timeline.Stop(); _projectAnalysis?.Cancel(); _projectAnalysis?.Dispose(); _workspace?.Dispose();
     }
 }

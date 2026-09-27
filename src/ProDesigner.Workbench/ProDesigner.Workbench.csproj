@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="../ProDesigner.Geometry/ProDesigner.Geometry.csproj" />
     <ProjectReference Include="../ProDesigner.Persistence/ProDesigner.Persistence.csproj" />
     <ProjectReference Include="../ProDesigner.Authoring/ProDesigner.Authoring.csproj" />
     <ProjectReference Include="../ProDesigner.Avalonia/ProDesigner.Avalonia.csproj" />

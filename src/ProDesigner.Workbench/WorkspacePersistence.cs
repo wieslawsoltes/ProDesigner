@@ -128,6 +128,7 @@ public sealed partial class DesignerWorkbench
     }
     public async Task StopExternalPreviewAsync()
     {
+        _runtimeTimer.Stop(); HideEmbeddedPreview(); _runtimeSurface.ClearFrame();
         _previewCancellation?.Cancel();
         var preview = _externalPreview; _externalPreview = null; _previewDocument = null; _previewRevision = -1;
         if (preview is not null) await preview.DisposeAsync();
@@ -142,6 +143,7 @@ public sealed partial class DesignerWorkbench
             {
                 var version = Session.Version; var source = Session.Source;
                 await preview.UpdateAsync(source, _previewCancellation?.Token ?? default); _previewRevision = version;
+                if (preview is IRenderedExternalPreview) _runtimeTimer.Start();
             }
         }
         catch (Exception ex) { if (!_disposed) SetStatus("Isolated preview: " + ex.Message); }

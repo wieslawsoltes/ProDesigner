@@ -21,6 +21,7 @@ try {
     return JSON.parse(envelope.payload);
   });
   const initial = await workspace();
+  assert.equal(await page.evaluate(() => window.prodesigner.state().release), '0.4.0.0');
   assert.equal(initial.schemaVersion, 2, 'The deployed workbench must serve the schema-2 authoring release.');
   await page.waitForTimeout(700);
   await page.screenshot({ path: 'public-workbench.png' });
@@ -60,6 +61,13 @@ try {
     return window.prodesigner.state();
   });
   assert(edited.valid && edited.source.includes('Path1'), 'Published authoring must produce valid Path XAML.');
+  await page.evaluate(() => {
+    window.prodesigner.setSource('<Canvas xmlns="https://github.com/avaloniaui"><Path Name="Left" Data="M0 0H60V60H0Z" Fill="Red" Canvas.Left="30" Canvas.Top="30"/><Path Name="Right" Data="M0 0H60V60H0Z" Fill="Blue" Canvas.Left="60" Canvas.Top="30"/></Canvas>');
+    window.prodesigner.command('select-all'); window.prodesigner.command('path-union');
+  });
+  const booleanResult = await page.evaluate(() => window.prodesigner.state());
+  assert.equal((booleanResult.source.match(/<Path\b/g) ?? []).length, 1);
+  assert(booleanResult.valid);
   assert.deepEqual(errors, []);
   await page.waitForTimeout(300);
   await page.screenshot({ path: 'public-vector-authoring.png' });

@@ -5,8 +5,8 @@ using ProDesigner.Core;
 
 namespace ProDesigner.PreviewProtocol;
 
-public sealed record PreviewRequest(long Revision, string Operation, TrustedPreviewRequest? Document = null, string? AssemblyPath = null);
-public sealed record PreviewResponse(long Revision, bool Success, string? Error = null, int ControlCount = 0);
+public sealed record PreviewRequest(long Revision, string Operation, TrustedPreviewRequest? Document = null, string? AssemblyPath = null, PreviewViewport? Viewport = null, string? SourceHash = null, PreviewInput[]? Input = null);
+public sealed record PreviewResponse(long Revision, bool Success, string? Error = null, int ControlCount = 0, RenderedPreviewFrame? Frame = null, int ProtocolVersion = 2);
 [JsonSerializable(typeof(PreviewRequest))]
 [JsonSerializable(typeof(PreviewResponse))]
 public partial class PreviewJsonContext : JsonSerializerContext;

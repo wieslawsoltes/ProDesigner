@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <Version>0.3.0-alpha.1</Version>
+    <Version>0.4.0-alpha.1</Version>
     <Authors>ProDesigner contributors</Authors>
     <Company>ProDesigner</Company>
     <RepositoryUrl>https://github.com/wieslawsoltes/ProDesigner</RepositoryUrl>

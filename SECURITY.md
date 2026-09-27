@@ -34,7 +34,7 @@ Preparation uses Roslyn symbols and targeted supported XAML references without m
 
 Each file replacement is atomic; the collection of replacements is **not** an atomic filesystem-wide operation. External processes can observe intermediate results or race the final content check. A failure triggers rollback only while current file hashes still match the transaction. Later external edits are not intentionally overwritten. Conflicting rollback errors preserve the journal for manual/API recovery rather than fabricating a successful rollback.
 
-Recovery APIs require a receipt from the configured journal root, an explicit allowed-path set and valid before/after checksums. Relative paths and symlink traversal are rejected. The UI's last-rename history is session-local; automatic startup journal review and redo are not provided. A host should inspect and present journal targets before authorizing recovery. Checksummed journal files are not a trusted command source.
+Recovery APIs require a receipt from the configured journal root, an explicit allowed-path set and valid before/after checksums. Relative paths and symlink traversal are rejected. The UI's last-rename history remains session-local. Startup discovery now reads only journal metadata; target reads require an explicit Review action. Before/after review and conflict-aware recovery are available, and redo creates a new journal with exact-byte preconditions. A host should inspect and present journal targets before authorizing recovery. Checksummed journal files are not a trusted command source.
 
 ## Local data and automation
 
@@ -43,3 +43,11 @@ File access uses user-selected projects/documents. Recovery remains local. There
 PR CI uses read-only repository permissions. Release publishing needs contents write; Pages uses pages/id-token permissions and the existing protected environment. NuGet credentials are referenced only by the release publishing job; fork PRs do not receive them. No workflow extracts or prints secrets. The temporary source-integration workflows used during development are removed from the delivered branch.
 
 Use private security reporting where available. Never include credentials, customer solutions, sensitive local paths or private package tokens in public issue reports.
+
+## Embedded pixels, native geometry and incremental source validation
+
+The embedded renderer accepts bounded PNG frames from the already trusted preview worker. The frame includes an exact source hash, ordered sequence, viewport and named-control map. Validate checks PNG signature/IHDR and the negotiated four-megapixel maximum before image decoding. PNG bytes are limited to eight MiB, node count to 10,000 and input batches to 128. Stale geometry cannot target newer source. Input reset works independently of source state, including hidden views. This does not make a malicious trusted project harmless: its worker already has the user's privileges.
+
+Vector Boolean and stroke-outline operations invoke the bundled native Skia library over bounded, validated path models. Their single-precision topology is not an exact-arithmetic guarantee; native-library security updates remain part of dependency maintenance.
+
+Incremental existing-attribute validation parses an isolated XML attribute and checks its exact shape. Quote-breaking, namespace, XML-directive and structural edits fall back to full document parsing. Tests compare full and incremental spans across randomized source edits. The fast path does not bypass DTD/size/encoding validation and never evaluates a markup extension.

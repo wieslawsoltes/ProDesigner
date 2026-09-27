@@ -27,6 +27,13 @@ public sealed partial class DesignerWorkbench
             case "new": NewDocument(); break;
             case "fit": _surface.Fit(); break;
             case "preview": TogglePreview(); break;
+            case "runtime-artboard": ShowEmbeddedPreview(); break;
+            case "trusted-runtime": ShowTrustedPreview(); break;
+            case "path-union": CombineSelectedPaths(ProDesigner.Geometry.PathBooleanOperation.Union); break;
+            case "path-subtract": CombineSelectedPaths(ProDesigner.Geometry.PathBooleanOperation.Difference); break;
+            case "path-intersect": CombineSelectedPaths(ProDesigner.Geometry.PathBooleanOperation.Intersect); break;
+            case "path-xor": CombineSelectedPaths(ProDesigner.Geometry.PathBooleanOperation.Xor); break;
+            case "stroke-outline": OutlineSelectedStroke(); break;
             case "find": _bottom.SelectedIndex = 0; _editor.ShowFind(); break;
             case "authoring": ShowAuthoringTools(); break;
             case "components": ShowComponentTools(); break;
@@ -35,6 +42,8 @@ public sealed partial class DesignerWorkbench
             case "constraints": ShowConstraintTools(); break;
             case "refactor": ShowProjectRefactoring(); break;
             case "refactor-undo": _ = UndoRenameFromUiAsync(); break;
+            case "refactor-redo": _ = RedoRenameFromUiAsync(); break;
+            case "file-journals": _ = ShowFileJournalsAsync(); break;
             case "studio-undo": UndoStudioTransaction(); break;
             case "studio-redo": RedoStudioTransaction(); break;
             case "vector": ShowVectorEditor(); break;
@@ -120,6 +129,7 @@ public sealed partial class DesignerWorkbench
         // Modal editors and prototypes own their keyboard input. Canvas shortcuts must never
         // delete, nudge or undo the document behind a dialog; child editors still receive keys.
         if (_overlay.IsVisible && e.Key != Key.Escape) return;
+        if (_runtimePanel.IsVisible && _runtimeSurface.Interactive && _runtimeSurface.IsKeyboardFocusWithin) return;
         var control = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         if (control)
         {
@@ -154,13 +164,18 @@ public sealed partial class DesignerWorkbench
         var items = new StackPanel { Spacing = 4 };
         var commands = new Dictionary<string, Action>
         {
+            ["Review file transaction journals"] = () => _ = ShowFileJournalsAsync(), ["Redo last project rename"] = () => _ = RedoRenameFromUiAsync(),
             ["Project-aware XAML / C# rename"] = ShowProjectRefactoring, ["Undo last project rename"] = () => _ = UndoRenameFromUiAsync(),
             ["Components and variants"] = ShowComponentTools, ["Prototype connections and flow map"] = ShowPrototypeTools,
             ["Run interactive prototype"] = RunPrototype, ["Responsive constraints"] = ShowConstraintTools,
             ["Undo grouped workspace edit"] = () => Guard(UndoStudioTransaction), ["Redo grouped workspace edit"] = () => Guard(RedoStudioTransaction),
             ["Design system / resources / styles / paint"] = ShowAuthoringTools, ["Edit vector geometry"] = ShowVectorEditor,
+            ["Union selected paths"] = () => Execute("path-union"), ["Subtract selected paths"] = () => Execute("path-subtract"),
+            ["Intersect selected paths"] = () => Execute("path-intersect"), ["Xor selected paths"] = () => Execute("path-xor"),
+            ["Outline selected stroke"] = () => Execute("stroke-outline"),
             ["Save complete workspace"] = () => _ = SaveWorkspaceAsync(),
             ["Open saved workspace"] = () => _ = OpenWorkspaceSnapshotAsync(), ["Recovery journal"] = ShowRecovery,
+            ["Show embedded runtime artboard"] = ShowEmbeddedPreview,
             ["Stop isolated preview"] = () => _ = StopExternalPreviewAsync(),
             ["New view"] = NewDocument, ["Open XAML documents"] = () => _ = OpenDocumentsAsync(), ["Save active view"] = () => _ = SaveDocumentAsync(),
             ["Open solution / project"] = () => _ = OpenWorkspaceAsync(), ["Undo"] = () => Execute("undo"), ["Redo"] = () => Execute("redo"),
