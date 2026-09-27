@@ -76,6 +76,23 @@ public sealed class SolutionWorkspace : IWorkspaceService
         }
         finally { _gate.Release(); }
     }
+    public async Task<IReadOnlyList<CompletionItem>> GetXamlCompletionsAsync(string projectPath, string source, int offset, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var project = _workspace?.CurrentSolution.Projects.FirstOrDefault(p => string.Equals(p.FilePath, projectPath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+            if (project is null) return [];
+            var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
+            if (compilation is null) return [];
+            var syntax = ProDesigner.Xaml.XamlSyntaxTree.Parse(source); var node = syntax.At(offset) ?? syntax.Root;
+            while (node.IsProperty && node.Parent is not null) node = node.Parent;
+            var analysis = new ProDesigner.Roslyn.XamlCompilationService().Analyze(source, compilation);
+            var bound = analysis.Elements.FirstOrDefault(n => n.Id == node.Id);
+            return bound?.Members.Select(m => new CompletionItem(m.Name, m.Kind, m.Type)).ToArray() ?? [];
+        }
+        finally { _gate.Release(); }
+    }
     public static ProjectSummary InspectProject(string path, string? name = null)
     {
         using var reader = XmlReader.Create(path, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = 4 * 1024 * 1024 });

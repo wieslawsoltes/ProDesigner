@@ -46,3 +46,36 @@ test('real Avalonia WASM workbench: boot, source edits, history, insertion, erro
   await page.keyboard.press('Escape');
   expect(errors).toEqual([]);
 });
+
+
+test('workspace recovery, visual authoring dialogs, and vector geometry', async ({ page }, testInfo) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window.prodesigner?.state().ready, null, { timeout: 150000 });
+  await expect(page.locator('#boot')).toHaveCount(0, { timeout: 15000 });
+  await page.evaluate(() => { window.prodesigner.select('RevenueCard'); window.prodesigner.setProperty('Width', '312'); });
+  const snapshot = await page.evaluate(() => window.prodesigner.exportWorkspace());
+  expect(JSON.parse(snapshot).format).toBe('ProDesigner.Workspace');
+  await page.evaluate(() => window.prodesigner.command('new'));
+  await page.evaluate(json => window.prodesigner.importWorkspace(json), snapshot);
+  expect((await page.evaluate(() => window.prodesigner.state())).source).toContain('Width="312"');
+  await page.evaluate(() => window.prodesigner.command('authoring'));
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: testInfo.outputPath('prodesigner-authoring.png') });
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { window.prodesigner.command('new'); window.prodesigner.insert('Path'); window.prodesigner.command('vector'); });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: testInfo.outputPath('prodesigner-vector-editor.png') });
+  await page.keyboard.press('Escape');
+  const beforeReload = await page.evaluate(() => window.prodesigner.state().source);
+  await page.waitForFunction(expected => {
+    const raw = localStorage.getItem('prodesigner.recovery');
+    if (!raw) return false;
+    const workspace = JSON.parse(JSON.parse(raw).payload);
+    return workspace.documents[workspace.activeDocument].source === expected;
+  }, beforeReload, { timeout: 15000 });
+  await page.reload();
+  await page.waitForFunction(() => window.prodesigner?.state().ready, null, { timeout: 150000 });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.prodesigner.command('restore-recovery'));
+  expect((await page.evaluate(() => window.prodesigner.state())).source).toBe(beforeReload);
+});

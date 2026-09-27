@@ -7,6 +7,8 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using ProDesigner.Animation;
 using ProDesigner.Design;
+using ProDesigner.Persistence;
+using ProDesigner.Xaml;
 
 namespace ProDesigner.Workbench;
 
@@ -17,8 +19,8 @@ public sealed class TimelineEditor : UserControl
     private readonly TimelineCanvas _canvas = new();
     private readonly TextBox _duration = StudioControls.Field("1");
     private readonly TextBox _value = StudioControls.Field("1");
-    private readonly ComboBox _property = new() { ItemsSource = new[] { "Opacity", "Width", "Height", "Canvas.Left", "Canvas.Top", "FontSize" }, SelectedIndex = 0, Width = 115, FontSize = 11 };
-    private readonly ComboBox _easing = new() { ItemsSource = Enum.GetNames<EasingKind>(), SelectedIndex = 3, Width = 110, FontSize = 11 };
+    private readonly ComboBox _property = new() { ItemsSource = new[] { "Opacity", "Width", "Height", "Canvas.Left", "Canvas.Top", "FontSize", "Background", "Foreground", "Fill", "Stroke", "RotateTransform.Angle", "ScaleTransform.ScaleX", "ScaleTransform.ScaleY", "TranslateTransform.X", "TranslateTransform.Y" }, SelectedIndex = 0, Width = 115, FontSize = 11 };
+    private readonly ComboBox _easing = new() { ItemsSource = Enum.GetNames<EasingKind>().Where(n => n != "Custom").ToArray(), SelectedIndex = 3, Width = 110, FontSize = 11 };
     private readonly TextBlock _time = StudioControls.Text("0.00 s", 11, "#BBAAF1");
     private readonly CheckBox _loop = new() { Content = "Loop", FontSize = 11 };
     private AnimationClip _clip = new();
@@ -27,16 +29,37 @@ public sealed class TimelineEditor : UserControl
     public AnimationClip Animation => _clip;
     public event Action<AnimationClip, double>? Seeked;
     public event Action? ExportRequested;
+    public event Action? ImportRequested;
+    public event Action? Changed;
+    private readonly Stack<ClipState> _undo = new();
+    private readonly Stack<ClipState> _redo = new();
+    private bool _attaching;
+    private void Checkpoint() { _undo.Push(ClipState.Capture(_clip)); _redo.Clear(); }
+    private void RestoreClip(ClipState state)
+    {
+        var clip = state.Restore(); _clip.Name = clip.Name; _clip.DurationSeconds = clip.DurationSeconds; _clip.Loop = clip.Loop;
+        _clip.Tracks.Clear(); _clip.Tracks.AddRange(clip.Tracks); _clip.ColorTracks.Clear(); _clip.ColorTracks.AddRange(clip.ColorTracks);
+        _attaching = true; _duration.Text = LayoutEngine.Format(_clip.DurationSeconds); _loop.IsChecked = _clip.Loop; _attaching = false;
+        _canvas.InvalidateVisual(); Changed?.Invoke(); Seek(_position);
+    }
+    public void Undo() { if (_undo.Count == 0) return; _redo.Push(ClipState.Capture(_clip)); RestoreClip(_undo.Pop()); }
+    public void Redo() { if (_redo.Count == 0) return; _undo.Push(ClipState.Capture(_clip)); RestoreClip(_redo.Pop()); }
     public event Action<string>? Status;
     public TimelineEditor()
     {
         _duration.Width = 48; _value.Width = 60;
         var toolbar = StudioControls.Row(StudioControls.Button("▶", "Play animation", Play), StudioControls.Button("■", "Stop animation", Stop), _time, StudioControls.Caption("DURATION"), _duration, _loop, _property, _value, _easing, StudioControls.Button("◇ Key", "Add keyframe at the playhead", AddKey), StudioControls.Button("Export XAML", "Insert animation styles into the document", () => ExportRequested?.Invoke()));
+        toolbar.Children.Add(StudioControls.Button("Import", "Import animation from XAML", () => ImportRequested?.Invoke()));
+        toolbar.Children.Add(StudioControls.Button("↶", "Undo timeline edit", Undo));
+        toolbar.Children.Add(StudioControls.Button("↷", "Redo timeline edit", Redo));
         toolbar.Margin = new(10, 4);
         var grid = new Grid { RowDefinitions = RowDefinitions.Parse("Auto,*") };
-        StudioControls.Place(grid, toolbar, 0, 0); StudioControls.Place(grid, _canvas, 1, 0); Content = grid;
+        StudioControls.Place(grid, new ScrollViewer { Content = toolbar, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled }, 0, 0); StudioControls.Place(grid, new ScrollViewer { Content = _canvas, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, 1, 0); Content = grid;
         _canvas.SeekRequested += t => { _timer.Stop(); Seek(t); };
-        _canvas.DeleteRequested += (track, time) => { track.RemoveKey(time); _canvas.InvalidateVisual(); };
+        _canvas.DeleteRequested += (track, time) => { Checkpoint(); track.RemoveKey(time); _canvas.InvalidateVisual(); Changed?.Invoke(); };
+        _canvas.ColorDeleteRequested += (track, time) => { Checkpoint(); track.RemoveKey(time); _canvas.InvalidateVisual(); Changed?.Invoke(); };
+        _duration.LostFocus += (_, _) => UpdateSettings();
+        _loop.PropertyChanged += (_, e) => { if (e.Property == CheckBox.IsCheckedProperty && !_attaching) UpdateSettings(); };
         _timer.Tick += (_, _) =>
         {
             var t = _clock.Elapsed.TotalSeconds / _clip.DurationSeconds;
@@ -46,11 +69,18 @@ public sealed class TimelineEditor : UserControl
     }
     public void Attach(DesignerSession session, AnimationClip clip)
     {
-        Stop(); _session = session; _clip = clip; _canvas.Animation = clip; _duration.Text = LayoutEngine.Format(clip.DurationSeconds); _loop.IsChecked = clip.Loop; Seek(0);
+        Stop(); _undo.Clear(); _redo.Clear(); _attaching = true; _session = session; _clip = clip; _canvas.Animation = clip; _duration.Text = LayoutEngine.Format(clip.DurationSeconds); _loop.IsChecked = clip.Loop; _attaching = false; Seek(0);
+    }
+    private void UpdateSettings()
+    {
+        if (_attaching) return;
+        var duration = Math.Clamp(LayoutEngine.Number(_duration.Text, 1), .05, 86400); var loop = _loop.IsChecked == true;
+        if (_clip.DurationSeconds == duration && _clip.Loop == loop) return;
+        Checkpoint(); _clip.DurationSeconds = duration; _clip.Loop = loop; Changed?.Invoke(); _canvas.InvalidateVisual();
     }
     public void Play()
     {
-        _clip.DurationSeconds = Math.Max(.05, LayoutEngine.Number(_duration.Text, 1)); _clip.Loop = _loop.IsChecked == true;
+        UpdateSettings();
         _clock.Restart(); _timer.Start();
     }
     public void Stop() { _timer.Stop(); _clock.Stop(); Seek(0); }
@@ -62,13 +92,26 @@ public sealed class TimelineEditor : UserControl
     public void AddKey()
     {
         if (_session?.Primary is not { } node) { Status?.Invoke("Select a named control before adding a keyframe."); return; }
-        var target = node.Get("x:Name") ?? node.Get("Name");
+        var target = XamlNames.Name(node);
         if (target is null) { Status?.Invoke("Give the selected control an x:Name first."); return; }
         var property = _property.SelectedItem?.ToString() ?? "Opacity";
-        var value = LayoutEngine.Number(_value.Text, double.NaN);
-        if (!double.IsFinite(value)) { Status?.Invoke("Enter a finite numeric keyframe value."); return; }
-        _clip.GetTrack(target, property).SetKey(_position, value, Enum.Parse<EasingKind>(_easing.SelectedItem?.ToString() ?? "Linear"));
-        _canvas.InvalidateVisual(); Seeked?.Invoke(_clip, _position);
+        try
+        {
+            if (property is "Background" or "Foreground" or "Fill" or "Stroke")
+            {
+                var color = ColorValue.Parse(_value.Text ?? ""); Checkpoint(); _clip.GetColorTrack(target, property).SetKey(_position, color);
+            }
+            else
+            {
+                var value = LayoutEngine.Number(_value.Text, double.NaN);
+                if (!double.IsFinite(value)) throw new FormatException("Enter a finite numeric value, or #RRGGBB for a color property.");
+                Checkpoint(); _clip.GetTrack(target, property).SetKey(_position, value, Enum.Parse<EasingKind>(_easing.SelectedItem?.ToString() ?? "Linear"));
+            }
+            _canvas.MinHeight = Math.Max(110, 60 + 30 * (_clip.Tracks.Count + _clip.ColorTracks.Count));
+            _canvas.InvalidateVisual(); Seeked?.Invoke(_clip, _position); Changed?.Invoke();
+        }
+        catch (ArgumentException ex) { Status?.Invoke(ex.Message); }
+        catch (FormatException ex) { Status?.Invoke(ex.Message); }
     }
     private sealed class TimelineCanvas : Control
     {
@@ -76,6 +119,7 @@ public sealed class TimelineEditor : UserControl
         public double Position { get; set; }
         public event Action<double>? SeekRequested;
         public event Action<AnimationTrack, double>? DeleteRequested;
+        public event Action<ColorAnimationTrack, double>? ColorDeleteRequested;
         public TimelineCanvas()
         {
             MinHeight = 110;
@@ -88,6 +132,11 @@ public sealed class TimelineEditor : UserControl
                 {
                     var track = Animation.Tracks[row]; var key = track.Keys.OrderBy(k => Math.Abs(k.Time - t)).FirstOrDefault();
                     if (key is not null && Math.Abs(key.Time - t) < .025) DeleteRequested?.Invoke(track, key.Time);
+                }
+                else if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed && row >= Animation.Tracks.Count && row < Animation.Tracks.Count + Animation.ColorTracks.Count)
+                {
+                    var track = Animation.ColorTracks[row - Animation.Tracks.Count]; var key = track.Keys.OrderBy(k => Math.Abs(k.Time - t)).FirstOrDefault();
+                    if (key is not null && Math.Abs(key.Time - t) < .025) ColorDeleteRequested?.Invoke(track, key.Time);
                 }
                 else { SeekRequested?.Invoke(t); e.Pointer.Capture(this); }
                 e.Handled = true;
@@ -117,6 +166,11 @@ public sealed class TimelineEditor : UserControl
                     var geometry = new StreamGeometry(); using (var g = geometry.Open()) { g.BeginFigure(new(x, y - 5), true); g.LineTo(new(x + 5, y)); g.LineTo(new(x, y + 5)); g.LineTo(new(x - 5, y)); g.EndFigure(true); }
                     context.DrawGeometry(Brush.Parse("#B8A9F1"), null, geometry);
                 }
+            }
+            for (var i = 0; i < Animation.ColorTracks.Count; i++)
+            {
+                var y = 48 + (i + Animation.Tracks.Count) * 30; var track = Animation.ColorTracks[i]; Text(track.Target + " · " + track.Property, 16, y - 6);
+                foreach (var key in track.Keys) context.DrawEllipse(Brush.Parse(key.Value.ToString()), new Pen(Brushes.White, 1), new(215 + key.Time * width, y), 5, 5);
             }
             var playhead = 215 + Position * width;
             context.DrawLine(new Pen(Brush.Parse("#E1C1FB"), 1.5), new(playhead, 28), new(playhead, Bounds.Height));

@@ -13,6 +13,7 @@ public sealed class PropertyInspector : UserControl
     private readonly StackPanel _body = new() { Spacing = 16, Margin = new(16) };
     private readonly TextBox _filter = StudioControls.Field(watermark: "Search properties");
     private DesignerSession? _session;
+    public IReadOnlyList<ProDesigner.Core.CompletionItem> ProjectProperties { get; set; } = [];
     public event Action<string>? Status;
     public event Action<string>? GenerateHandler;
     public PropertyInspector()
@@ -49,6 +50,7 @@ public sealed class PropertyInspector : UserControl
         AddSection("STATE", ["IsVisible", "IsEnabled", "IsChecked", "Value"]);
         var extras = node.Attributes.Select(a => a.Name).Where(n => !ControlCatalog.CommonProperties.Contains(n) && !n.StartsWith("xmlns", StringComparison.Ordinal) && !n.StartsWith("x:", StringComparison.Ordinal)).ToArray();
         if (extras.Length > 0) AddSection("ADDITIONAL XAML", extras);
+        if (ProjectProperties.Count > 0) AddSection("PROJECT PROPERTIES", ProjectProperties.Where(m => m.Kind == "Property").Select(m => m.Label));
         var name = StudioControls.Field(watermark: "Property / attached property");
         var value = StudioControls.Field(watermark: "Value or {Binding Path}");
         _body.Children.Add(StudioControls.Caption("ADD PROPERTY")); _body.Children.Add(name); _body.Children.Add(value);

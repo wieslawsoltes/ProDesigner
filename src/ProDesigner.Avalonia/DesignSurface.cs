@@ -20,6 +20,7 @@ public sealed class DesignSurface : UserControl
     private double _zoom = .8;
     public IReadOnlyList<PreviewProfile> Profiles { get; set; } = [PreviewProfile.Defaults[0], PreviewProfile.Defaults[1]];
     public IReadOnlyList<DesignDiagnostic> Diagnostics { get; private set; } = [];
+    public IReadOnlyDictionary<string, string> SampleData { get; set; } = new PreviewBuilder().SampleData;
     public bool Interactive { get; private set; }
     public double Zoom => _zoom;
     public event Action<string>? Status;
@@ -81,7 +82,7 @@ public sealed class DesignSurface : UserControl
         double x = 56, y = 64;
         foreach (var profile in Profiles)
         {
-            var result = new PreviewBuilder().Build(_session.Tree, profile);
+            var result = new PreviewBuilder { SampleData = SampleData }.Build(_session.Tree, profile);
             diagnostics.AddRange(result.Diagnostics);
             var frame = new PreviewFrame(_session, result, profile);
             frame.Status += message => Status?.Invoke(message);
@@ -98,6 +99,10 @@ public sealed class DesignSurface : UserControl
     public void ApplyAnimation(string target, string property, double value)
     {
         foreach (var frame in _frames) frame.ApplyAnimation(target, property, value);
+    }
+    public void ApplyAnimationValue(string target, string property, string value)
+    {
+        foreach (var frame in _frames) if (frame.FindByName(target) is { } control) PreviewBuilder.ApplyProperty(control, property, value);
     }
     public void RefreshSelection() { foreach (var frame in _frames) frame.RefreshSelection(); }
     public void Align(Alignment alignment)

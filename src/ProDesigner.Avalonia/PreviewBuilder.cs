@@ -27,6 +27,8 @@ public sealed class PreviewBuilder
     public PreviewResult Build(XamlSyntaxTree tree, PreviewProfile profile)
     {
         _controls.Clear(); _diagnostics.Clear(); _resources.Clear();
+        if (tree.Elements.Count > 10000)
+            return new(new TextBlock { Text = "Safe preview limit reached (10,000 syntax nodes). Source remains editable." }, new Dictionary<string, Control>(), [new("PREVIEW010", "This document exceeds the safe preview control budget.", DiagnosticSeverity.Warning)]);
         foreach (var resource in tree.Elements.Where(e => e.Get("x:Key") is not null))
         {
             var key = resource.Get("x:Key")!;
@@ -57,7 +59,7 @@ public sealed class PreviewBuilder
             "CheckBox" => new CheckBox(), "RadioButton" => new RadioButton(), "ToggleSwitch" => new ToggleSwitch(),
             "Slider" => new Slider(), "ProgressBar" => new ProgressBar(), "ComboBox" => new ComboBox(),
             "ComboBoxItem" => new ComboBoxItem(), "ListBox" => new ListBox(), "ListBoxItem" => new ListBoxItem(),
-            "Rectangle" => new Rectangle(), "Ellipse" => new Ellipse(), "Separator" => new Separator(),
+            "Path" => new Avalonia.Controls.Shapes.Path(), "Rectangle" => new Rectangle(), "Ellipse" => new Ellipse(), "Separator" => new Separator(),
             "ContentControl" => new ContentControl(), "ItemsControl" => new ItemsControl(),
             _ => Unsupported(node)
         };
@@ -81,7 +83,12 @@ public sealed class PreviewBuilder
             var member = child.LocalName[(child.LocalName.IndexOf('.') + 1)..];
             try
             {
-                if (member is "Children" or "Child" or "Content" or "Items") children.AddRange(child.Children);
+                if (member is "Background" or "Foreground" or "BorderBrush" or "Fill" or "Stroke" && child.Children.Count == 1)
+                {
+                    var brush = ParseBrush(child.Children[0]);
+                    if (brush is null || !ApplyBrush(control, member, brush)) Warn(child, "PREVIEW004", "Unsupported brush object.");
+                }
+                else if (member is "Children" or "Child" or "Content" or "Items") children.AddRange(child.Children);
                 else if (member == "RowDefinitions" && control is Grid rowGrid)
                     foreach (var row in child.Children) rowGrid.RowDefinitions.Add(new RowDefinition(GridLength.Parse(row.Get("Height") ?? "*")));
                 else if (member == "ColumnDefinitions" && control is Grid columnGrid)
@@ -140,6 +147,42 @@ public sealed class PreviewBuilder
             Child = new TextBlock { Text = node.Name + "\nRuntime preview required", FontSize = 11, Foreground = Brush.Parse("#C89B49") } };
     }
     private void Warn(XamlElement node, string code, string message) => _diagnostics.Add(new(code, message, DiagnosticSeverity.Warning, node.Span.Start, node.Span.Length));
+    private static IBrush? ParseBrush(XamlElement node)
+    {
+        if (node.LocalName == "SolidColorBrush") return Brush.Parse(node.Get("Color") ?? "Transparent");
+        if (node.LocalName == "LinearGradientBrush")
+        {
+            var brush = new LinearGradientBrush { StartPoint = RelativePoint.Parse(node.Get("StartPoint") ?? "0%,0%"), EndPoint = RelativePoint.Parse(node.Get("EndPoint") ?? "100%,0%") };
+            foreach (var stop in node.Children.Where(n => n.LocalName == "GradientStop")) brush.GradientStops.Add(new GradientStop(Color.Parse(stop.Get("Color") ?? "Transparent"), D(stop.Get("Offset") ?? "0")));
+            return brush;
+        }
+        return null;
+    }
+    private static bool ApplyBrush(Control control, string property, IBrush brush)
+    {
+        switch (property)
+        {
+            case "Background" when control is Border border: border.Background = brush; return true;
+            case "Background" when control is Panel panel: panel.Background = brush; return true;
+            case "Background" when control is TemplatedControl templated: templated.Background = brush; return true;
+            case "Foreground" when control is TemplatedControl templated: templated.Foreground = brush; return true;
+            case "Foreground" when control is TextBlock text: text.Foreground = brush; return true;
+            case "BorderBrush" when control is Border border: border.BorderBrush = brush; return true;
+            case "BorderBrush" when control is TemplatedControl templated: templated.BorderBrush = brush; return true;
+            case "Fill" when control is Shape shape: shape.Fill = brush; return true;
+            case "Stroke" when control is Shape shape: shape.Stroke = brush; return true;
+            default: return false;
+        }
+    }
+    private static T Transform<T>(Control control) where T : Transform, new()
+    {
+        if (control.RenderTransform is not TransformGroup group)
+        {
+            group = new TransformGroup(); if (control.RenderTransform is Transform previous) group.Children.Add(previous); control.RenderTransform = group;
+        }
+        var result = group.Children.OfType<T>().FirstOrDefault();
+        if (result is null) { result = new T(); group.Children.Add(result); } return result;
+    }
     private static double D(string value) => double.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture);
     private static T E<T>(string value) where T : struct, Enum => Enum.Parse<T>(value, true);
     public static bool ApplyProperty(Control c, string property, string value)
@@ -214,6 +257,13 @@ public sealed class PreviewBuilder
             case "Maximum" when c is RangeBase range: range.Maximum = D(value); return true;
             case "Value" when c is RangeBase range: range.Value = D(value); return true;
             case "SelectedIndex" when c is SelectingItemsControl select: select.SelectedIndex = int.Parse(value, CultureInfo.InvariantCulture); return true;
+            case "Data" when c is Avalonia.Controls.Shapes.Path path: path.Data = Geometry.Parse(value); return true;
+            case "Stretch" when c is Shape shape: shape.Stretch = E<Stretch>(value); return true;
+            case "RotateTransform.Angle": Transform<RotateTransform>(c).Angle = D(value); return true;
+            case "TranslateTransform.X": Transform<TranslateTransform>(c).X = D(value); return true;
+            case "TranslateTransform.Y": Transform<TranslateTransform>(c).Y = D(value); return true;
+            case "ScaleTransform.ScaleX": Transform<ScaleTransform>(c).ScaleX = D(value); return true;
+            case "ScaleTransform.ScaleY": Transform<ScaleTransform>(c).ScaleY = D(value); return true;
             case "Fill" when c is Shape shape: shape.Fill = Brush.Parse(value); return true;
             case "Stroke" when c is Shape shape: shape.Stroke = Brush.Parse(value); return true;
             case "StrokeThickness" when c is Shape shape: shape.StrokeThickness = D(value); return true;

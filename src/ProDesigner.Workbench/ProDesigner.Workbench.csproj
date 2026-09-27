@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="../ProDesigner.Persistence/ProDesigner.Persistence.csproj" />
+    <ProjectReference Include="../ProDesigner.Authoring/ProDesigner.Authoring.csproj" />
     <ProjectReference Include="../ProDesigner.Avalonia/ProDesigner.Avalonia.csproj" />
     <ProjectReference Include="../ProDesigner.XamlX/ProDesigner.XamlX.csproj" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />

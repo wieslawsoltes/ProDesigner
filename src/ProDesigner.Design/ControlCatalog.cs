@@ -22,6 +22,7 @@ public static class ControlCatalog
         new("ProgressBar", "Feedback", "▰", "<ProgressBar Width=\"240\" Height=\"8\" Value=\"65\" />", "Determinate progress."),
         new("ComboBox", "Input", "⌄", "<ComboBox Width=\"200\" SelectedIndex=\"0\"><ComboBoxItem Content=\"First option\" /><ComboBoxItem Content=\"Second option\" /></ComboBox>", "A compact list of choices."),
         new("ListBox", "Collections", "≡", "<ListBox Width=\"240\" Height=\"160\"><ListBoxItem Content=\"First item\" /><ListBoxItem Content=\"Second item\" /></ListBox>", "A selectable list."),
+        new("Path", "Shapes", "◇", "<Path Width=\"200\" Height=\"160\" Data=\"M 10,80 C 30,0 150,0 180,80 Q 150,150 10,80 Z\" Stroke=\"#A79BFA\" StrokeThickness=\"3\" Fill=\"#403954\" />", "Editable line, quadratic and cubic Bezier geometry."),
         new("Rectangle", "Shapes", "▭", "<Rectangle Width=\"160\" Height=\"100\" Fill=\"#A79BFA\" RadiusX=\"12\" RadiusY=\"12\" />", "A rectangle with optional rounded corners."),
         new("Ellipse", "Shapes", "○", "<Ellipse Width=\"120\" Height=\"120\" Fill=\"#A79BFA\" />", "An ellipse or circle."),
         new("Separator", "Feedback", "—", "<Separator Width=\"240\" />", "A visual divider.")

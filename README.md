@@ -3,39 +3,42 @@
 # ◈ ProDesigner
 ### Your next great interface starts here.
 
-**A composable visual authoring environment for Avalonia UI.**
+**Composable visual authoring for Avalonia UI.**
 
 [![Build](https://github.com/wieslawsoltes/ProDesigner/actions/workflows/ci.yml/badge.svg)](https://github.com/wieslawsoltes/ProDesigner/actions/workflows/ci.yml)
 ![.NET](https://img.shields.io/badge/.NET-10-7C6BC4)
 ![Avalonia](https://img.shields.io/badge/Avalonia-12.1.3-9D8BE0)
 ![License](https://img.shields.io/badge/license-MIT-77AE98)
 
-[Getting started](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Capabilities](docs/capabilities.md) · [Embedding](docs/embedding.md) · [Security](SECURITY.md)
+[Open browser designer](https://wieslawsoltes.github.io/ProDesigner/) · [Downloads](https://github.com/wieslawsoltes/ProDesigner/releases) · [Getting started](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Capability ledger](docs/capabilities.md)
 
 </div>
 
 ---
 
-ProDesigner brings visual editing and source authoring into one Avalonia workbench. Arrange real controls on device artboards, inspect their properties, edit XAML without losing its comments and formatting, navigate between views, and build numeric animation tracks. The desktop and browser hosts share the same C# workbench and Avalonia rendering—not an HTML approximation.
+ProDesigner brings visual editing and source authoring into one Avalonia workbench. Arrange real controls on device artboards, inspect properties, edit XAML without losing comments and formatting, navigate between views, create animation tracks, and recover your workspace after restarting. Desktop and browser hosts share C# editing libraries and real Avalonia rendering—not an HTML approximation.
 
-> **Status: 0.1.0-alpha.1.** This is an initial, functional implementation, not a claim of complete WPF Designer, Blend, Figma, or Xcode parity. The [capability matrix](docs/capabilities.md) distinguishes implemented workflows, restricted behavior, and remaining engineering work. The GitHub Pages build uses safe catalog previews; full MSBuild and arbitrary runtime XAML execution are desktop-only.
+> **0.2.0-alpha.1.** This is a functional alpha, not a claim of complete WPF Designer, Blend, Figma or Xcode parity. The [capability ledger](docs/capabilities.md) identifies usable workflows, restrictions and remaining work. Browser previews use an explicit built-in-control catalog; project evaluation and arbitrary runtime XAML execution are desktop-only.
 
-## Design and code, together
+## Design, code and project context
 
-| Workspace | Implemented behavior |
+| Area | Implemented workflows |
 | --- | --- |
-| Visual authoring | Multi-artboard preview, selection, Canvas dragging, eight-handle resize, grid/object snapping, guides, marquee selection, keyboard nudging, alignment and distribution commands. |
-| Source model | Source-spanned XML/XAML concrete syntax tree, targeted changes, exact-source undo/redo, optimistic revision checks, atomic structural edits, preserved unknown syntax and comments. |
-| Language services | Real pinned XamlX parser integration, markup-extension syntax validation, Roslyn C# syntax diagnostics and event-handler generation; project-bound XAML type/property/event diagnostics, semantic member discovery and rename APIs in the reusable Roslyn package. |
-| Inspector and editor | Multi-selection property editing, attached properties, arbitrary attribute input, binding/resource text, AvaloniaEdit syntax coloring, line numbers, find/replace, catalog completion, code-to-selection synchronization. |
-| Navigation | Multiple open views with independent history, sample view navigator, desktop XAML/solution/project file pickers, browser XAML import/export, device/theme profiles. |
-| Animation | Named-target numeric tracks, sorted/replaced keyframes, scrubbing, playback, looping, easing evaluation, cubic-Bezier solver, tested continuous-easing Avalonia Style/Animation spline export. |
-| Project services | Explicit-trust MSBuildWorkspace loading, project-reference and metadata resolution through MSBuild, compilation diagnostics, source discovery, cancellable SDK restore/build, raw project/package inventory. |
-| Delivery | Ten packable libraries, desktop and WebAssembly hosts, cross-platform build/test jobs, browser interaction tests, release and Pages publishing workflows. |
+| Visual authoring | Device/theme artboards, Canvas dragging, eight resize handles, multi-selection movement, aspect constraints, snapping/guides, alignment, distribution and gesture cancellation. |
+| Source preservation | Source-spanned XAML tree, targeted property/structural transactions, undo/redo, stale-edit checks, namespace-aware fragment import, namescope-aware supported reference rewrites. Invalid typing retains the last valid preview. |
+| Compiler services | Real pinned XamlX parser; Roslyn project type/property/event diagnostics, C# diagnostics and event generation; loaded-project member completion/inspection and reusable semantic rename APIs. |
+| Workspace navigation | Multiple views, virtualized/collapsible layer outline, filtered solution view list, XAML import/export and target-framework choice for project preview. |
+| Trusted project preview | SDK restore/build and dependency resolution; supervised child process for compiled custom controls/code-behind, revision-matched IPC, live XAML updates and cancellation/timeout termination. |
+| Design systems and paint | Resource/style/ControlTheme authoring, source-based template composition, RGBA color controls, linear-gradient stops and editable JSON sample data. |
+| Vector editing | Editable M/L/C/Q/Z paths with endpoint and Bézier-handle manipulation. Unsupported arc/shorthand/Boolean operations are not silently approximated. |
+| Animation | Named scalar/color tracks, playback, scrub, looping, timeline undo/redo, custom splines, representable XAML import and tested continuous-easing export. |
+| Recovery | Versioned/checksummed complete workspaces; desktop/browser two-generation journals; saved baselines, intermediate XAML, code-behind, timelines, sample data and profiles; optimistic conflict-aware atomic desktop saves. |
+
+Use **Design** in the toolbar for resources, styles, templates, paint and data. Insert **Path** from Assets and open **Path** to edit its geometry. Use the command palette for workspace files, recovery, isolated preview and its Stop command.
 
 ## Run the desktop application
 
-Install the .NET 10 SDK, then:
+Install the .NET 10 SDK:
 
 ```sh
 git clone --recurse-submodules https://github.com/wieslawsoltes/ProDesigner.git
@@ -44,76 +47,70 @@ dotnet restore ProDesigner.slnx
 dotnet run --project apps/ProDesigner.Desktop
 ```
 
-The pinned XamlX submodule is required. For an existing clone, run `git submodule update --init --recursive`. Windows, macOS, and Linux use Avalonia's desktop platform backend. The .NET SDK is also required for trusted solution evaluation.
+An existing clone needs `git submodule update --init --recursive`. Windows, macOS and Linux use Avalonia's desktop backend. The SDK is also required to evaluate/build a trusted solution, even when running a self-contained desktop distribution.
 
-## Run the browser application
+## Browser development
 
 ```sh
 dotnet workload install wasm-tools
 dotnet run --project apps/ProDesigner.Browser
 ```
 
-For a static distribution:
+For a static bundle, run `dotnet publish apps/ProDesigner.Browser -c Release -o artifacts/browser` and serve its generated `wwwroot` over HTTP/HTTPS. Threading is disabled, so Pages does not require cross-origin-isolation headers. Browser journals stay in origin-local storage; quota failures are reported. Export `.prodesigner` files for portable backups.
 
-```sh
-dotnet publish apps/ProDesigner.Browser -c Release -o artifacts/browser
-# Serve the generated wwwroot directory over HTTP or HTTPS, not file://.
-```
-
-Browser builds do not include Roslyn/MSBuild or execute custom XAML constructors. They use the same source model, XamlX parser, editor, timeline, and safe built-in Avalonia control preview. Threading is disabled so the site does not depend on cross-origin isolation headers.
-
-## A toolbox of reusable libraries
+## Thirteen reusable packages
 
 | Package | Responsibility |
 | --- | --- |
-| `ProDesigner.Core` | Diagnostics, spans, edits, preview profiles, host-service contracts. |
-| `ProDesigner.Xaml` | Lossless syntax model and structural/property editing operations. |
-| `ProDesigner.Design` | Document sessions, history, selection, layout geometry and control catalog. |
-| `ProDesigner.Animation` | Tracks, keyframes, interpolation, cubic-Bezier evaluation and XAML export. |
-| `ProDesigner.XamlX` | Pinned upstream XamlX parser integration with non-executing validation. |
-| `ProDesigner.Roslyn` | C# syntax, handler generation, project-bound XAML diagnostics, semantic members and workspace symbol rename. |
-| `ProDesigner.Runtime` | Explicitly trusted runtime XAML, compiled custom controls, code-behind roots and assembly-dependency resolution. |
-| `ProDesigner.Workspaces` | Trusted MSBuild solution/project loading and dependency diagnostics. |
-| `ProDesigner.Avalonia` | Real-control safe preview, source maps, artboards, interactive design surface. |
-| `ProDesigner.Workbench` | Embeddable workbench, code editor, property inspector and timeline controls. |
+| `ProDesigner.Core` | Diagnostics, spans, edits, preview profiles and host contracts. |
+| `ProDesigner.Xaml` | Lossless source model, namespace/namescope helpers, reference-safe editing and fragment import. |
+| `ProDesigner.Design` | Sessions, history, selection, resize/layout geometry and toolbox. |
+| `ProDesigner.Animation` | Scalar/color tracks, interpolation, splines and XAML import/export. |
+| `ProDesigner.Authoring` | Resources, styles, themes, gradient models and editable path geometry. |
+| `ProDesigner.Persistence` | Workspace codec, snapshots, recovery and atomic/conflict-aware files. |
+| `ProDesigner.PreviewProtocol` | Bounded named-pipe transport and supervised preview processes. |
+| `ProDesigner.XamlX` | Actual pinned upstream XamlX parser integration. |
+| `ProDesigner.Roslyn` | Project-bound XAML diagnostics, C# generation and semantic services. |
+| `ProDesigner.Workspaces` | Trusted MSBuild solution loading, dependencies and SDK builds. |
+| `ProDesigner.Runtime` | Trusted Avalonia runtime XAML and compiled project controls. |
+| `ProDesigner.Avalonia` | Safe real-control preview, artboards and source-linked design surface. |
+| `ProDesigner.Workbench` | Embeddable editor, inspector, timeline, vector tools and workspace UI. |
 
-Build NuGet archives with `dotnet pack src/ProDesigner.Xaml -c Release`. CI packs every library. Public registry publishing occurs only when a release tag is pushed and the repository's `NUGET_API_KEY` secret is configured; no registry publication is implied by a successful build.
-
-## A source-preserving edit in a few lines
+Portable editing libraries do not depend on application hosts. See [embedding](docs/embedding.md) for independent use and optional host-service injection.
 
 ```csharp
 using ProDesigner.Design;
 
 var session = new DesignerSession(xaml);
-var button = session.Tree.Elements.First(n => n.Get("x:Name") == "SaveButton");
+var button = session.Tree.Elements.First(n => n.DisplayName == "SaveButton");
 session.Select(button.Id);
 session.SetProperty("Width", "160");
-// Only the affected attribute changes; surrounding source remains untouched.
-var editedXaml = session.Source;
+var editedXaml = session.Source; // Targeted edit; surrounding source stays intact.
 session.Undo();
 ```
 
-Use `session.Apply(label, edits, expectedVersion)` for atomic tools. Invalid text typed into the editor is retained as the active source; visual edits pause and the last valid tree/preview remains available. Preview interpretation never rewrites unsupported markup.
+Use `session.Apply(label, edits, expectedVersion)` for atomic tools. Resolve syntax nodes again after a transaction: IDs are structural, with source-span selection reconciliation, not a fully incremental immutable compiler graph.
 
-## Build and test
+## Build, test and release
 
 ```sh
 dotnet build ProDesigner.slnx -c Release
 dotnet test tests/ProDesigner.Tests -c Release
+dotnet pack src/ProDesigner.Authoring -c Release
 ```
 
-The test suite covers lexical edge cases, trivia preservation, stale and overlapping edits, undo/redo, malformed documents, DTD rejection, layout geometry, keyframe evaluation, Roslyn generation, project inspection, and Avalonia headless workbench behavior. Playwright loads the actual WebAssembly application and exercises the public UI-command bridge; screenshots and traces are retained as CI artifacts. These checks do not substitute for platform accessibility audits, complex-project interoperability testing, or professional-designer parity acceptance.
+The 128-test suite includes real SDK/MSBuild graphs, separately launched preview workers, malformed-source recovery, pointer operations, namespace/reference preservation, runtime-valid authored brushes/themes, animation fidelity, checksummed snapshots and external-file conflicts. Playwright tests the actual WebAssembly workbench, including mouse dragging and recovery across a page reload. See [testing](docs/testing.md).
 
-## Safety and trust
+CI builds/tests on Windows, macOS and Linux and packs all 13 libraries. A version change in `Directory.Build.props` merged into `main`, a matching version tag, or a manual release run builds release packages, self-contained desktop bundles and a tested browser archive. GitHub release downloads include SHA-256 checksums; prerelease versions are marked accordingly. Existing release assets are not overwritten. NuGet.org publishing is conditional on `NUGET_API_KEY`; downloadable `.nupkg` files do not imply registry publication. No signing or notarization is currently performed.
 
-Reading XAML is not the same as executing XAML. Safe preview instantiates only an explicit catalog of built-in Avalonia controls. MSBuild evaluation and runtime previews require separate affirmative actions. The initial runtime preview is **in-process, not a security sandbox**, and can restore/build and load the selected project only after the explicit runtime-preview trust action. See [SECURITY.md](SECURITY.md).
+## Trust and remaining boundaries
 
-## Roadmap and contribution
+The safe preview creates only known built-in controls. Opening/evaluating a project and running its XAML require affirmative trust. Desktop runtime execution is in a separate supervised process, but that process has the user's OS permissions: **crash containment is not a security sandbox**. Recovery never restores a trust grant or executes a project. See [SECURITY.md](SECURITY.md).
 
-Professional parity is tracked explicitly in [docs/capabilities.md](docs/capabilities.md): process-isolated project preview, full template/style/resource authoring, robust cross-file XAML/C# refactoring, advanced vector tools, constraints/components/variants, comprehensive animation import/export, virtualized large solutions, collaboration and accessibility coverage remain active work.
+Remaining major areas include complete application-resource initialization, embedded process-rendered artboards, incremental AST/preview updates, comprehensive cross-file XAML/C# refactoring, full visual template/state authoring, advanced vector operations, Figma-style components/variants/constraints, complete animation semantics, multiplayer and production accessibility/performance qualification. Workspace files preserve documents and timelines, not all undo stacks or the full evaluated solution graph. The [ledger](docs/capabilities.md) is the acceptance contract, not a statement of parity already achieved.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR. Keep services independent of the workbench, make unsupported behavior visible, and include source round-trip and UI regression tests with every new editor operation.
+## Contributing and licensing
 
-## License and acknowledgements
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Preserve user source, keep libraries independently consumable, report unsupported behavior and add round-trip/undo/UI tests for new operations.
 
-MIT. XamlX is included at a pinned upstream revision under its MIT license. Avalonia, AvaloniaEdit, Roslyn, MSBuild Locator, xUnit and Playwright retain their respective licenses. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+MIT. XamlX is pinned to its upstream MIT source; dependencies retain their respective licenses. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). ProDesigner is independent and is not affiliated with the designer products used as comparison targets.

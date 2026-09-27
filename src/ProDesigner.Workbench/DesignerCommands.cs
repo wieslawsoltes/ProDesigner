@@ -28,6 +28,13 @@ public sealed partial class DesignerWorkbench
             case "fit": _surface.Fit(); break;
             case "preview": TogglePreview(); break;
             case "find": _bottom.SelectedIndex = 0; _editor.ShowFind(); break;
+            case "authoring": ShowAuthoringTools(); break;
+            case "vector": ShowVectorEditor(); break;
+            case "workspace-save": _ = SaveWorkspaceAsync(); break;
+            case "workspace-open": _ = OpenWorkspaceSnapshotAsync(); break;
+            case "recovery": ShowRecovery(); break;
+            case "restore-recovery": RestoreRecovery(); break;
+            case "animation-import": ImportAnimation(); break;
             case "animation": _bottom.SelectedIndex = 1; break;
             default: throw new ArgumentException("Unknown designer command: " + command);
         }
@@ -45,10 +52,10 @@ public sealed partial class DesignerWorkbench
         while (taken.Contains(name + number)) number++;
         var controlName = name + number;
         var insertion = item.Xaml.IndexOf(' '); if (insertion < 0) insertion = item.Xaml.IndexOf('>');
-        var attributes = $" x:Name=\"{controlName}\"";
+        var attributes = $" xmlns:x=\"{XamlNames.LanguageNamespace}\" x:Name=\"{controlName}\"";
         if (parent.LocalName == "Canvas") attributes += " Canvas.Left=\"40\" Canvas.Top=\"40\"";
         var fragment = item.Xaml.Insert(insertion, attributes);
-        Session.Apply("Insert " + name, [XamlEdits.AppendChild(Session.Tree, parent, fragment)]);
+        Session.Apply("Insert " + name, FragmentImporter.Append(Session.Tree, parent, fragment));
         SelectByName(controlName); RefreshDocument();
     });
     private void NewDocument()
@@ -59,7 +66,7 @@ public sealed partial class DesignerWorkbench
     }
     private void CopySelection()
     {
-        _copiedFragment = string.Join(Session.Tree.NewLine, Session.SelectedRoots().Where(n => n.Parent is not null).Select(n => Session.Source.Substring(n.Span.Start, n.Span.Length)));
+        _copiedFragment = string.Join(Session.Tree.NewLine, Session.SelectedRoots().Where(n => n.Parent is not null).Select(n => XamlNames.ExportFragment(Session.Tree, n)));
         SetStatus("Copied selection to the designer clipboard.");
     }
     private void PasteSelection()
@@ -68,17 +75,31 @@ public sealed partial class DesignerWorkbench
         var parent = Session.Primary;
         while (parent is not null && parent.LocalName is not "Canvas" and not "Grid" and not "StackPanel") parent = parent.Parent;
         parent ??= Session.Tree.Elements.FirstOrDefault(n => n.LocalName is "Canvas" or "Grid" or "StackPanel") ?? Session.Tree.Root;
-        // Names must be unique. Remove copied x:Name/Name attributes; all other syntax is preserved.
-        var aliases = string.Join(" ", Session.Tree.Root.Attributes.Where(a => a.Name.StartsWith("xmlns", StringComparison.Ordinal)).Select(a => $"{a.Name}=\"{XamlEdits.Escape(a.Value)}\""));
-        var prefix = $"<Fragment {aliases}>";
-        var tree = XamlSyntaxTree.Parse(prefix + _copiedFragment + "</Fragment>");
-        var fragment = EditApplication.Apply(_copiedFragment, tree.Elements.Skip(1).SelectMany(n => n.Attributes).Where(a => a.Name is "Name" or "x:Name").Select(a => new TextEdit(new(a.Span.Start - prefix.Length, a.Span.Length), "")));
-        Session.Apply("Paste controls", [XamlEdits.AppendChild(Session.Tree, parent, fragment)]);
+        var wrapper = "<Fragment xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"" + XamlNames.LanguageNamespace + "\">";
+        var fragmentTree = XamlSyntaxTree.Parse(wrapper + _copiedFragment + "</Fragment>");
+        var fragment = _copiedFragment;
+        var taken = Session.Tree.Elements.Select(XamlNames.Name).Where(n => n is not null).ToHashSet();
+        var rewrites = new List<TextEdit>(); var mapping = new Dictionary<(XamlElement, string), string>();
+        foreach (var node in fragmentTree.Elements.Skip(1))
+        {
+            var name = XamlNames.Name(node); if (name is null) continue;
+            var unique = name; var index = 2; while (!taken.Add(unique)) unique = name + "Copy" + index++;
+            mapping[(XamlNames.Scope(node), name)] = unique;
+        }
+        foreach (var node in fragmentTree.Elements.Skip(1)) foreach (var attribute in node.Attributes)
+        {
+            var value = attribute.Value;
+            foreach (var pair in mapping.Where(p => p.Key.Item1 == XamlNames.Scope(node)))
+                value = XamlNames.IsName(node, attribute.Name) && value == pair.Key.Item2 ? pair.Value : XamlNames.RewriteReference(attribute.Name, value, pair.Key.Item2, pair.Value);
+            if (value != attribute.Value) rewrites.Add(new(new(attribute.ValueSpan.Start - wrapper.Length, attribute.ValueSpan.Length), XamlEdits.Escape(value, attribute.Quote)));
+        }
+        fragment = EditApplication.Apply(fragment, rewrites);
+        Session.Apply("Paste controls", FragmentImporter.Append(Session.Tree, parent, fragment));
     }
     private void TogglePreview() { _surface.SetInteractive(!_surface.Interactive); SetStatus(_surface.Interactive ? "Interactive preview · click controls to test built-in behavior. Click Preview to return to design." : "Design mode · source editing enabled."); }
     private void ExportAnimation() => Guard(() =>
     {
-        if (_active.Animation.Tracks.Count == 0) { SetStatus("Add animation tracks first."); return; }
+        if (_active.Animation.Tracks.Count + _active.Animation.ColorTracks.Count == 0) { SetStatus("Add animation tracks first."); return; }
         var styles = _active.Animation.ToAvaloniaStyles();
         var propertyName = Session.Tree.Root.Name + ".Styles";
         var property = Session.Tree.Root.Children.FirstOrDefault(n => n.Name == propertyName);
@@ -94,6 +115,7 @@ public sealed partial class DesignerWorkbench
             if (e.Key == Key.S) { _editor.Flush(); _ = SaveDocumentAsync(); e.Handled = true; }
             else if (e.Key == Key.O) { _ = OpenDocumentsAsync(); e.Handled = true; }
             else if (e.Key == Key.K) { ShowCommandPalette(); e.Handled = true; }
+            else if (e.Key == Key.Z && _timeline.IsKeyboardFocusWithin && e.Source is not TextBox) { if ((e.KeyModifiers & KeyModifiers.Shift) != 0) _timeline.Redo(); else _timeline.Undo(); e.Handled = true; }
             else if (e.Key == Key.Z && e.Source is not TextBox) { Execute((e.KeyModifiers & KeyModifiers.Shift) != 0 ? "redo" : "undo"); e.Handled = true; }
             else if (e.Key == Key.Y && e.Source is not TextBox) { Execute("redo"); e.Handled = true; }
             else if (e.Key == Key.D && !_editor.IsKeyboardFocusWithin) { Execute("duplicate"); e.Handled = true; }
@@ -117,6 +139,10 @@ public sealed partial class DesignerWorkbench
         var items = new StackPanel { Spacing = 4 };
         var commands = new Dictionary<string, Action>
         {
+            ["Design system / resources / styles / paint"] = ShowAuthoringTools, ["Edit vector geometry"] = ShowVectorEditor,
+            ["Save complete workspace"] = () => _ = SaveWorkspaceAsync(),
+            ["Open saved workspace"] = () => _ = OpenWorkspaceSnapshotAsync(), ["Recovery journal"] = ShowRecovery,
+            ["Stop isolated preview"] = () => _ = StopExternalPreviewAsync(),
             ["New view"] = NewDocument, ["Open XAML documents"] = () => _ = OpenDocumentsAsync(), ["Save active view"] = () => _ = SaveDocumentAsync(),
             ["Open solution / project"] = () => _ = OpenWorkspaceAsync(), ["Undo"] = () => Execute("undo"), ["Redo"] = () => Execute("redo"),
             ["Duplicate selection"] = () => Execute("duplicate"), ["Delete selection"] = () => Execute("delete"), ["Fit all artboards"] = _surface.Fit,
