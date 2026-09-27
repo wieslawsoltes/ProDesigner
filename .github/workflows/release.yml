@@ -68,10 +68,16 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet publish apps/ProDesigner.Desktop -c Release -r ${{ matrix.rid }} --self-contained true -o artifacts/${{ matrix.rid }}
+      - name: Package desktop with native executable permissions
+        shell: bash
+        run: |
+          cp README.md LICENSE THIRD-PARTY-NOTICES.md "artifacts/${{ matrix.rid }}/"
+          tar -czf "artifacts/prodesigner-${{ matrix.rid }}.tar.gz" -C artifacts "${{ matrix.rid }}"
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.rid }}
-          path: artifacts/
+          path: artifacts/prodesigner-${{ matrix.rid }}.tar.gz
+          compression-level: 0
   browser:
     needs: metadata
     runs-on: ubuntu-latest
@@ -113,10 +119,8 @@ jobs:
           pattern: release-*
           path: artifacts
           merge-multiple: true
-      - name: Archive desktop distributions and checksum downloads
-        run: |
-          for rid in win-x64 linux-x64 osx-arm64; do tar -czf "artifacts/prodesigner-$rid.tar.gz" -C artifacts "$rid"; done
-          (cd artifacts && sha256sum *.tar.gz packages/*.nupkg > SHA256SUMS.txt)
+      - name: Checksum all release downloads
+        run: (cd artifacts && sha256sum *.tar.gz packages/*.nupkg > SHA256SUMS.txt)
       - name: Publish versioned GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
