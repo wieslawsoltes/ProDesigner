@@ -1,0 +1,75 @@
+name: Publish browser to Pages
+on:
+  push:
+    branches: [main, feat/prodesigner-studio]
+    paths-ignore: ['docs/**', '*.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pages: read
+    steps:
+      - name: Inspect Pages configuration and previous deployment annotations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/pages" --jq '{build_type,source,status,html_url}' || true
+          gh api "repos/$GITHUB_REPOSITORY/environments/github-pages" --jq '.deployment_branch_policy' || true
+          RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?per_page=30" --jq '.workflow_runs[] | select(.path == ".github/workflows/pages.yml" and .conclusion == "failure") | .id' | head -1)
+          if [[ -n "$RUN" ]]; then
+            for JOB in $(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/jobs" --jq '.jobs[] | select(.conclusion == "failure") | .id'); do
+              gh api "repos/$GITHUB_REPOSITORY/check-runs/$JOB/annotations" --jq '.[].message' || true
+            done
+          fi
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: dotnet workload install wasm-tools
+      - run: dotnet publish apps/ProDesigner.Browser -c Release -o artifacts/browser
+      - name: Prepare site
+        run: |
+          mkdir -p artifacts/site
+          ROOT=$(find artifacts/browser -type f -path '*/wwwroot/index.html' -print -quit)
+          test -n "$ROOT"
+          cp -a "$(dirname "$ROOT")/." artifacts/site/
+          touch artifacts/site/.nojekyll
+      - run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium && npx playwright test
+        working-directory: tests/browser
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/site
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/deploy-pages@v4
+        id: deployment

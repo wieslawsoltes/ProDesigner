@@ -1,0 +1,95 @@
+name: Build, test, package
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  desktop:
+    name: Desktop and libraries (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore ProDesigner.slnx
+      - run: dotnet build ProDesigner.slnx -c Release --no-restore
+      - run: dotnet test tests/ProDesigner.Tests -c Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
+      - name: Pack standalone libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p artifacts/packages
+          for project in src/*/*.csproj; do dotnet pack "$project" -c Release --no-build -o artifacts/packages; done
+      - name: Publish desktop
+        run: dotnet publish apps/ProDesigner.Desktop -c Release --no-restore --self-contained false -o artifacts/desktop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            artifacts/
+            TestResults/
+          if-no-files-found: warn
+  browser:
+    name: Browser and interaction tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: dotnet workload install wasm-tools
+      - run: dotnet publish apps/ProDesigner.Browser -c Release -o artifacts/browser
+      - name: Prepare static site
+        shell: bash
+        run: |
+          mkdir -p artifacts/site
+          ROOT=$(find artifacts/browser -type f -path '*/wwwroot/index.html' -print -quit)
+          test -n "$ROOT"
+          cp -a "$(dirname "$ROOT")/." artifacts/site/
+          touch artifacts/site/.nojekyll
+      - run: npm install --no-audit --no-fund
+        working-directory: tests/browser
+      - run: npx playwright install --with-deps chromium
+        working-directory: tests/browser
+      - run: npx playwright test
+        working-directory: tests/browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-site-and-tests
+          path: |
+            artifacts/site/
+            tests/browser/test-results/
+            tests/browser/playwright-report/
+          if-no-files-found: warn
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Source distribution
+        run: tar --exclude=.git --exclude='*/.git' -czf /tmp/prodesigner-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prodesigner-source
+          path: /tmp/prodesigner-source.tar.gz

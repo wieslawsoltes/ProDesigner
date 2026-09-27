@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../ProDesigner.Design/ProDesigner.Design.csproj" /><ProjectReference Include="../ProDesigner.Animation/ProDesigner.Animation.csproj" /><PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" /></ItemGroup></Project>

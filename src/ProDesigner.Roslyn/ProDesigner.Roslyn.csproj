@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../ProDesigner.Xaml/ProDesigner.Xaml.csproj" /><ProjectReference Include="../ProDesigner.Core/ProDesigner.Core.csproj" /><PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(RoslynVersion)" /></ItemGroup></Project>

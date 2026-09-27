@@ -1,0 +1,15 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ProDesigner.Workbench.DesignerApplication"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <FontFamily x:Key="ContentControlThemeFontFamily">fonts:Inter#Inter</FontFamily>
+    <Color x:Key="SystemAccentColor">#A899EC</Color>
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush">#A899EC</SolidColorBrush>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+    <StyleInclude Source="avares://ProDesigner.Workbench/Themes/Studio.axaml" />
+  </Application.Styles>
+</Application>

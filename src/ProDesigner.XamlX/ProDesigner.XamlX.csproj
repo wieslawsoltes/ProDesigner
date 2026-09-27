@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><DefineConstants>$(DefineConstants);XAMLX_INTERNAL</DefineConstants><NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625</NoWarn><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ProDesigner.Xaml/ProDesigner.Xaml.csproj" />
+    <Compile Include="../../external/XamlX/src/XamlX/**/*.cs" Exclude="../../external/XamlX/src/XamlX/obj/**;../../external/XamlX/src/XamlX/bin/**" LinkBase="Upstream" />
+    <None Include="../../external/XamlX/LICENSE" Pack="true" PackagePath="licenses/XamlX.txt" />
+  </ItemGroup>
+  <Target Name="RequireXamlX" BeforeTargets="BeforeBuild" Condition="!Exists('../../external/XamlX/src/XamlX/XamlX.csproj')"><Error Text="Run git submodule update --init --recursive to restore the pinned XamlX compiler source." /></Target>
+</Project>
