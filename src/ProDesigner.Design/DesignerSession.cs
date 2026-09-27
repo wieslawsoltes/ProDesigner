@@ -7,9 +7,8 @@ namespace ProDesigner.Design;
 
 public sealed class DesignerSession
 {
-    private sealed record State(string Source, string[] Selection, string Label);
-    private readonly List<State> _undo = [];
-    private readonly List<State> _redo = [];
+    private readonly List<SourceHistoryEntry> _undo = [];
+    private readonly List<SourceHistoryEntry> _redo = [];
     private readonly HashSet<string> _selection = [];
     private string _savedSource;
     private long _lastTypingTick;
@@ -32,9 +31,34 @@ public sealed class DesignerSession
     public event Action? SelectionChanged;
     public DesignerSession(string source)
     {
-        Source = _savedSource = source;
-        Tree = XamlSyntaxTree.Parse(source);
+        Source = _savedSource = source; Tree = XamlSyntaxTree.Parse(source);
     }
+    public SourceHistorySnapshot CaptureHistory(int maximumEntries = 50)
+    {
+        if (maximumEntries is < 0 or > 200) throw new ArgumentOutOfRangeException(nameof(maximumEntries));
+        return new(Tree.Source, _undo.TakeLast(maximumEntries).Select(Clone).ToArray(), _redo.TakeLast(maximumEntries).Select(Clone).ToArray());
+    }
+    public void RestoreHistory(SourceHistorySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.Undo is null || snapshot.Redo is null || snapshot.Undo.Length + snapshot.Redo.Length > 400) throw new InvalidDataException("Invalid source history size.");
+        var validTree = XamlSyntaxTree.Parse(snapshot.ValidSource);
+        long size = 0;
+        foreach (var entry in snapshot.Undo.Concat(snapshot.Redo))
+        {
+            if (entry is null || entry.Source is null || entry.ValidSource is null || entry.Selection is null || entry.Label is null || entry.Source.Length > XamlSyntaxTree.MaximumLength || entry.Label.Length > 1024 || entry.Selection.Length > 10000)
+                throw new InvalidDataException("Invalid source history entry.");
+            size += ((long)entry.Source.Length + entry.ValidSource.Length) * 2;
+            if (size > HistoryBudget * 2) throw new InvalidDataException("Source history exceeds the memory budget.");
+            XamlSyntaxTree.Parse(entry.ValidSource);
+        }
+        _undo.Clear(); _undo.AddRange(snapshot.Undo.Select(Clone));
+        _redo.Clear(); _redo.AddRange(snapshot.Redo.Select(Clone));
+        if (!IsValid) Tree = validTree;
+        _lastTypingTick = 0;
+    }
+    private static SourceHistoryEntry Clone(SourceHistoryEntry value) => value with { Selection = value.Selection.ToArray() };
+    private SourceHistoryEntry Capture(string label) => new(Source, Tree.Source, _selection.ToArray(), label);
     public void MarkSaved() { _lastTypingTick = 0; _savedSource = Source; Changed?.Invoke(new(Version, "Saved", Source)); }
     public void Select(string? id, bool additive = false)
     {
@@ -57,8 +81,7 @@ public sealed class DesignerSession
         if (source == Source) return;
         if (!mergeTyping || _undo.Count == 0 || _undo[^1].Label != label || Environment.TickCount64 - _lastTypingTick > 1000) PushUndo(label);
         _lastTypingTick = mergeTyping ? Environment.TickCount64 : 0;
-        _redo.Clear();
-        Load(source, label);
+        _redo.Clear(); Load(source, label);
     }
     public void Apply(string label, IEnumerable<TextEdit> edits, long? expectedVersion = null)
     {
@@ -67,15 +90,13 @@ public sealed class DesignerSession
         var changes = edits.ToArray();
         var oldSelection = SelectedElements().Select(e => (e.Span.Start, e.Name)).ToArray();
         var source = EditApplication.Apply(Source, changes);
-        XamlSyntaxTree.Parse(source); // All visual transactions are atomic and must remain well formed.
-        SetSource(source, label);
-        _selection.Clear();
+        XamlSyntaxTree.Parse(source);
+        SetSource(source, label); _selection.Clear();
         foreach (var (offset, name) in oldSelection)
         {
             if (changes.Any(e => e.Span.Length > 0 && e.Span.Contains(offset) && e.NewText.Length == 0)) continue;
             var mapped = offset + changes.Where(e => e.Span.End <= offset).Sum(e => e.NewText.Length - e.Span.Length);
-            var node = Tree.At(mapped);
-            if (node is not null && node.Name == name) _selection.Add(node.Id);
+            var node = Tree.At(mapped); if (node is not null && node.Name == name) _selection.Add(node.Id);
         }
         SelectionChanged?.Invoke();
     }
@@ -103,44 +124,38 @@ public sealed class DesignerSession
     public void DeleteSelection()
     {
         var roots = SelectedRoots().Where(e => e.Parent is not null).ToArray();
-        Apply("Delete selection", roots.Select(e => XamlEdits.Delete(Tree, e)));
-        Select(null);
+        Apply("Delete selection", roots.Select(e => XamlEdits.Delete(Tree, e))); Select(null);
     }
     public void DuplicateSelection()
     {
-        var roots = SelectedRoots().Where(e => e.Parent is not null).ToArray();
-        Apply("Duplicate selection", XamlNames.Duplicate(Tree, roots));
+        var roots = SelectedRoots().Where(e => e.Parent is not null).ToArray(); Apply("Duplicate selection", XamlNames.Duplicate(Tree, roots));
     }
     public void Undo()
     {
         if (_undo.Count == 0) return;
-        var state = _undo[^1]; _undo.RemoveAt(_undo.Count - 1);
-        _redo.Add(new(Source, _selection.ToArray(), state.Label));
-        Restore(state, "Undo " + state.Label);
+        _lastTypingTick = 0; var state = _undo[^1]; _undo.RemoveAt(_undo.Count - 1);
+        _redo.Add(Capture(state.Label)); Restore(state, "Undo " + state.Label);
     }
     public void Redo()
     {
         if (_redo.Count == 0) return;
-        var state = _redo[^1]; _redo.RemoveAt(_redo.Count - 1);
-        _undo.Add(new(Source, _selection.ToArray(), state.Label));
-        Restore(state, "Redo " + state.Label);
+        _lastTypingTick = 0; var state = _redo[^1]; _redo.RemoveAt(_redo.Count - 1);
+        _undo.Add(Capture(state.Label)); Restore(state, "Redo " + state.Label);
     }
     private void PushUndo(string label)
     {
-        _undo.Add(new(Source, _selection.ToArray(), label));
-        while (_undo.Count > 1 && (_undo.Count > 200 || _undo.Sum(s => (long)s.Source.Length * 2) > HistoryBudget)) _undo.RemoveAt(0);
+        _undo.Add(Capture(label));
+        while (_undo.Count > 1 && (_undo.Count > 200 || _undo.Sum(s => ((long)s.Source.Length + s.ValidSource.Length) * 2) > HistoryBudget)) _undo.RemoveAt(0);
     }
-    private void Restore(State state, string label)
+    private void Restore(SourceHistoryEntry state, string label)
     {
-        Load(state.Source, label);
-        _selection.Clear();
+        Tree = XamlSyntaxTree.Parse(state.ValidSource); Load(state.Source, label); _selection.Clear();
         foreach (var id in state.Selection.Where(id => Tree.Find(id) is not null)) _selection.Add(id);
         SelectionChanged?.Invoke();
     }
     private void Load(string source, string label)
     {
-        Source = source; Version++;
-        var watch = Stopwatch.StartNew();
+        Source = source; Version++; var watch = Stopwatch.StartNew();
         try { Tree = XamlSyntaxTree.Parse(source); IsValid = true; Diagnostics = []; }
         catch (XmlException ex)
         {
@@ -151,7 +166,6 @@ public sealed class DesignerSession
         }
         LastParseMilliseconds = watch.Elapsed.TotalMilliseconds;
         if (IsValid) _selection.RemoveWhere(id => Tree.Find(id) is null);
-        Changed?.Invoke(new(Version, label, Source));
-        SelectionChanged?.Invoke();
+        Changed?.Invoke(new(Version, label, Source)); SelectionChanged?.Invoke();
     }
 }
