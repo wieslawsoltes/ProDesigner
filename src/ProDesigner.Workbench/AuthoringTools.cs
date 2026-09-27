@@ -23,7 +23,7 @@ public sealed partial class DesignerWorkbench
         tabs.Items.Add(new TabItem { Header = "Templates", Content = TemplateTools() });
         tabs.Items.Add(new TabItem { Header = "Paint", Content = BrushTools() });
         tabs.Items.Add(new TabItem { Header = "Data", Content = SampleDataTools() });
-        ShowDialog("Design system & authoring", tabs);
+        ShowDialog("Design system & authoring", Column(Row(Button("Components", "Linked components and variants", ShowComponentTools), Button("Prototype", "Navigation flows", ShowPrototypeTools), Button("Constraints", "Responsive layout anchors", ShowConstraintTools)), tabs));
     }
     private static Dictionary<string, string> ReadSetters(string text)
     {

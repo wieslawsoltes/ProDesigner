@@ -32,7 +32,7 @@ public sealed partial class DesignerWorkbench
     {
         _editor.Flush();
         return new(WorkspaceState.CurrentSchema, "ProDesigner workspace", _documents.IndexOf(_active), _surface.Zoom, _surface.Profiles.ToArray(),
-            _documents.Select(d => new DocumentState(d.Name, d.Session.Source, d.Session.SavedSource, d.CodeBehind, d.Path, d.ProjectPath, ClipState.Capture(d.Animation), d.Session.Selection.ToArray())).ToArray(), new Dictionary<string, string>(_surface.SampleData));
+            _documents.Select(d => new DocumentState(d.Name, d.Session.Source, d.Session.SavedSource, d.CodeBehind, d.Path, d.ProjectPath, ClipState.Capture(d.Animation), d.Session.Selection.ToArray(), DocumentId(d), d.Session.CaptureHistory(20))).ToArray(), new Dictionary<string, string>(_surface.SampleData), _designSystem, _prototype);
     }
     public void ImportWorkspace(string json)
     {
@@ -42,10 +42,16 @@ public sealed partial class DesignerWorkbench
         {
             var session = new DesignerSession("<UserControl xmlns=\"https://github.com/avaloniaui\" />");
             session.SetSource(d.Source, "Restore workspace"); session.RestoreSavedBaseline(d.SavedSource);
+            if (d.History is not null) session.RestoreHistory(d.History);
             foreach (var id in d.Selection) session.Select(id, true);
             return new DocumentTab(d.Name, session) { Path = d.FilePath, ProjectPath = d.ProjectPath, CodeBehind = d.CodeBehind, Animation = d.Animation.Restore(), DiskHash = d.FilePath is null ? null : WorkspaceCodec.Hash(d.SavedSource) };
         }).ToArray();
-        _editor.Flush(); _documents.Clear(); _documents.AddRange(documents);
+        _editor.Flush(); _ = StopExternalPreviewAsync(); _documents.Clear(); _documents.AddRange(documents);
+        _documentIds.Clear();
+        for (var i = 0; i < documents.Length; i++) _documentIds[documents[i]] = state.Documents[i].Id ?? Guid.NewGuid().ToString("N");
+        _designSystem = state.DesignSystem ?? ProDesigner.DesignSystems.DesignSystemState.Empty;
+        _prototype = state.Prototype ?? ProDesigner.Prototyping.PrototypeGraph.Empty;
+        _studioUndo.Clear(); _studioRedo.Clear();
         _surface.Profiles = state.Profiles; if (state.SampleData is not null) _surface.SampleData = state.SampleData; SwitchDocument(documents[state.ActiveDocument]); _surface.SetZoom(state.Zoom);
         ScheduleRecovery();
     }

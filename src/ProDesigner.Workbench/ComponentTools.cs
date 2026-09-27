@@ -105,13 +105,25 @@ public sealed partial class DesignerWorkbench
     {
         _editor.Flush(); if (!_studioUndo.TryPeek(out var operation)) return;
         if (_designSystem != operation.After) throw new InvalidOperationException("Component metadata changed after this operation. Resolve or detach it before grouped undo.");
-        ApplyStudioTransaction(operation.Text.Inverse(), operation.Before, false); _studioUndo.Pop(); _studioRedo.Push(operation);
+        var documents = _documents.ToDictionary(DocumentId);
+        operation.Text.Inverse().Validate(documents.ToDictionary(p => p.Key, p => p.Value.Session.Source));
+        foreach (var change in operation.Text.Changes.Where(c => c.Before != c.After))
+            if (documents[change.DocumentId].Session.CaptureHistory(1).Undo.LastOrDefault()?.Source != change.Before)
+                throw new InvalidOperationException("Another source operation must be undone before this workspace edit.");
+        foreach (var change in operation.Text.Changes.Where(c => c.Before != c.After)) documents[change.DocumentId].Session.Undo();
+        _designSystem = operation.Before; _studioUndo.Pop(); _studioRedo.Push(operation); RefreshDocument(); ScheduleRecovery();
     }
     public void RedoStudioTransaction()
     {
         _editor.Flush(); if (!_studioRedo.TryPeek(out var operation)) return;
         if (_designSystem != operation.Before) throw new InvalidOperationException("Component metadata changed after undo.");
-        ApplyStudioTransaction(operation.Text, operation.After, false); _studioRedo.Pop(); _studioUndo.Push(operation);
+        var documents = _documents.ToDictionary(DocumentId);
+        operation.Text.Validate(documents.ToDictionary(p => p.Key, p => p.Value.Session.Source));
+        foreach (var change in operation.Text.Changes.Where(c => c.Before != c.After))
+            if (documents[change.DocumentId].Session.CaptureHistory(1).Redo.LastOrDefault()?.Source != change.After)
+                throw new InvalidOperationException("Source redo history no longer contains this workspace edit.");
+        foreach (var change in operation.Text.Changes.Where(c => c.Before != c.After)) documents[change.DocumentId].Session.Redo();
+        _designSystem = operation.After; _studioRedo.Pop(); _studioUndo.Push(operation); RefreshDocument(); ScheduleRecovery();
     }
     private void ShowComponentTools()
     {

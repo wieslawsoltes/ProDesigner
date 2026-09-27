@@ -29,6 +29,12 @@ public sealed partial class DesignerWorkbench
             case "preview": TogglePreview(); break;
             case "find": _bottom.SelectedIndex = 0; _editor.ShowFind(); break;
             case "authoring": ShowAuthoringTools(); break;
+            case "components": ShowComponentTools(); break;
+            case "prototype": ShowPrototypeTools(); break;
+            case "prototype-run": RunPrototype(); break;
+            case "constraints": ShowConstraintTools(); break;
+            case "studio-undo": UndoStudioTransaction(); break;
+            case "studio-redo": RedoStudioTransaction(); break;
             case "vector": ShowVectorEditor(); break;
             case "workspace-save": _ = SaveWorkspaceAsync(); break;
             case "workspace-open": _ = OpenWorkspaceSnapshotAsync(); break;
@@ -139,6 +145,9 @@ public sealed partial class DesignerWorkbench
         var items = new StackPanel { Spacing = 4 };
         var commands = new Dictionary<string, Action>
         {
+            ["Components and variants"] = ShowComponentTools, ["Prototype connections and flow map"] = ShowPrototypeTools,
+            ["Run interactive prototype"] = RunPrototype, ["Responsive constraints"] = ShowConstraintTools,
+            ["Undo grouped workspace edit"] = () => Guard(UndoStudioTransaction), ["Redo grouped workspace edit"] = () => Guard(RedoStudioTransaction),
             ["Design system / resources / styles / paint"] = ShowAuthoringTools, ["Edit vector geometry"] = ShowVectorEditor,
             ["Save complete workspace"] = () => _ = SaveWorkspaceAsync(),
             ["Open saved workspace"] = () => _ = OpenWorkspaceSnapshotAsync(), ["Recovery journal"] = ShowRecovery,
