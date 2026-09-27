@@ -1,21 +1,35 @@
-# Testing and release checklist
+# Validation and release checklist
 
-Run `dotnet test tests/ProDesigner.Tests -c Release` for core and Avalonia headless tests. The solution intentionally excludes the browser application so desktop contributors do not need the wasm-tools workload. Browser builds are independently published and tested in CI.
+## Local commands
 
-To run Playwright locally, publish the browser host and copy the generated wwwroot contents into artifacts/site, then run `npm install` and `npx playwright install chromium` under tests/browser followed by `npm test`. The configured static server serves the actual managed WebAssembly application.
+```sh
+dotnet restore ProDesigner.slnx
+dotnet build ProDesigner.slnx -c Release --no-restore
+dotnet test tests/ProDesigner.Tests -c Release --no-build
+```
 
-Tests must cover both directions of every editing feature: source → tree/preview and visual operation → exact source. Verify undo, redo, malformed intermediate source, comments/trivia, namespace aliases, attached properties, bindings, expected-version failure, and non-destructive handling of unsupported syntax. For new runtime features, add headless control assertions and browser checks where supported.
+The desktop solution deliberately excludes the browser host, so a desktop-only contributor does not need the WASM workload. For browser tests, install `wasm-tools`, publish `apps/ProDesigner.Browser`, place the generated wwwroot content in `artifacts/site`, and run `npm install`, `npx playwright install chromium`, then `npm test` under `tests/browser`.
 
-Before a release: require cross-platform CI and browser checks; inspect screenshots; review the capability ledger; inspect package contents; exercise a sample solution containing project and NuGet references; verify Pages boot from its repository subpath; confirm no secrets or local files are packaged. Current automation does not provide code signing, notarization, a security sandbox, or proof of full professional designer parity.
+## Test layers
 
-## Validated 0.2 implementation
+Pure-library tests cover syntax spans/trivia, malformed intermediate edits, namescopes, layout/resize/constraint geometry, component variants/overrides and source conflicts, prototype state transitions, scalar/color/spline animation and bounded workspace/history serialization.
 
-The expanded implementation has 128 passing tests, including actual SDK builds, an MSBuild project-reference graph, project-bound Roslyn XAML diagnostics, runtime loading of a compiled custom control and code-behind root, pointer dragging/resizing/cancellation, and exported spline comparisons against Avalonia's evaluator. The local Release solution build completed with zero warnings and errors. GitHub Actions separately validates Windows, macOS, Linux and the actual WebAssembly workbench; consult the PR's latest run for current remote results.
+Compiler/project tests exercise actual Roslyn renames, related and unrelated XAML types, C# comments/literals, code-behind events, real SDK builds, MSBuild project references, unsaved editor overlays and refreshed semantic snapshots. Journal tests inject a failure during a multi-file commit, verify rollback, preserve BOMs/CRLF bytes and refuse stale/external edits. They do not assert an impossible filesystem-wide atomic visibility guarantee.
 
-GitHub Pages deployment is restricted to `main`; PR #1 was merged and its deployment succeeded. Feature branches build and test the website but do not bypass the repository's protected Pages environment. Merging reviewed feature PRs activates the configured publishing path. The initial implementation has no public NuGet publication or signed desktop release until the release workflow is invoked with the required credentials.
+Avalonia.Headless tests run real controls and pointer events: drag/resize/cancel, runtime-valid authored resources/brushes/themes, custom-control previews, component propagation/grouped history, workspace recovery and prototype button navigation. Framework objects such as KeySpline are constructed through AvaloniaFact/AvaloniaTheory on the shared dispatcher. Ordinary xUnit workers must not accidentally initialize Avalonia's global dispatcher first.
 
-## 0.2 regression suite
+Playwright loads the real managed WebAssembly application, not a mocked DOM. Coverage includes visual pointer dragging, XAML edits, undo/redo, malformed-source recovery, reload recovery, geometry editing, linked component overrides and propagation, workspace schema round-trips, and a real mouse click navigating the prototype from SignIn to Settings and back. Screenshots and failure traces are attached to CI runs.
 
-The expanded suite adds token-aware/namescope tests, namespace hoisting validated by Avalonia's real runtime loader, style/resource preservation, gradient rendering, vector point editing, scalar/color animation round-tripping, corruption recovery and stale-file conflict tests. Process tests start the actual desktop executable in a headless worker mode, verify independent PIDs, render/update real controls, reject malformed XAML without losing the worker, and observe worker termination without terminating the test host.
+## Interpreting CI
 
-Browser tests cover the new authoring/path dialogs, complete-workspace export/import and recovery across a real page reload. CI screenshots and traces accompany the actual WebAssembly build; static HTML alone does not count as browser validation. Do not equate this suite with full WPF/Blend/Figma/Xcode parity.
+The PR workflow builds/tests desktop on Windows, macOS and Linux, packs all 15 source libraries and publishes/tests the browser independently. Keep build, test and packaging outcomes separate. A successful package archive does not prove production API compatibility, rendering parity or public registry publication.
+
+Exact counts and the tested commit belong in the final PR validation record, linked to its Actions run. Do not preserve a stale numeric badge when tests change. Do not claim local execution when a change was only validated by GitHub-hosted CI.
+
+## Release acceptance
+
+Require a green final-head PR build, inspect browser results/screenshots, and review the capability ledger. Test representative solutions, conflict paths and recovery. Verify that imported workspaces never restore trust and that prototype playback does not mutate source. Confirm package contents, licenses and no private data.
+
+Pages deploys only merged `main` through the protected environment. Verify the public repository subpath boots the intended revision. Versioned releases package source, 15 libraries, desktop bundles, browser output and checksums. Confirm the publishing result separately from CI: NuGet push is conditional, signing/notarization are not implemented, and existing release downloads are not overwritten.
+
+Remaining qualification includes large-solution frame/memory budgets, robust immutable/incremental identity, fuzzing, cancellation stress, full pointer/keyboard/platform coverage and accessibility audits. These are not replaced by the regression suite.
