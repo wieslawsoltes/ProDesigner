@@ -50,10 +50,8 @@ public sealed class CrossLanguageRenameService
                 if (before.FilePath is null) { diagnostics.Add(new("RENAME001", "An affected C# document has no file path.", Severity.Error)); continue; }
                 var oldText = (await before.GetTextAsync(cancellationToken).ConfigureAwait(false)).ToString();
                 var newText = (await after.GetTextAsync(cancellationToken).ConfigureAwait(false)).ToString();
-                if (oldText == newText) continue;
-                Add(new(before.FilePath, oldText, newText, oldText));
+                if (oldText != newText) Add(new(before.FilePath, oldText, newText, oldText));
             }
-            // Roslyn resolves ordinary naming conflicts; reject any new compiler error remaining after resolution.
             var oldCompilation = await changedProject.OldProject.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
             var newCompilation = await changedProject.NewProject.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
             if (oldCompilation is null || newCompilation is null) continue;
@@ -101,6 +99,18 @@ public sealed class CrossLanguageRenameService
             var value = declaringType.ContainingNamespace.IsGlobalNamespace ? newName : declaringType.ContainingNamespace.ToDisplayString() + "." + newName;
             edits.Add(XamlEdits.SetAttribute(tree, tree.Root, classAttribute.Name, value));
         }
+        bool CanRenameMember(INamedTypeSymbol? owner, SourceSpan span, bool publicOnly = true)
+        {
+            if (!BindsMember(owner, symbol, publicOnly)) return false;
+            // A rename that binds XAML to a pre-existing different member changes meaning even
+            // when all C# still compiles. Refuse it instead of silently selecting that member.
+            if (NearestMembers(owner, newName).Length > 0)
+            {
+                diagnostics.Add(new("RENAME005", $"'{owner!.ToDisplayString()}' already resolves '{newName}'. The XAML rename would change member binding.", Severity.Error, span.Start, span.Length, file));
+                return false;
+            }
+            return true;
+        }
         foreach (var node in tree.Elements)
         {
             var dot = node.Name.IndexOf('.'); var ownerName = dot < 0 ? node.Name : node.Name[..dot];
@@ -110,7 +120,7 @@ public sealed class CrossLanguageRenameService
                 var colon = ownerName.IndexOf(':'); var prefix = colon < 0 ? "" : ownerName[..(colon + 1)];
                 edits.AddRange(XamlEdits.RenameType(tree, node, prefix + newName + (dot < 0 ? "" : node.Name[dot..])));
             }
-            else if (!renamingType && dot > 0 && Inherits(nodeType, declaringType) && node.Name[(dot + 1)..] == symbol.Name && symbol is IPropertySymbol)
+            else if (!renamingType && symbol is IPropertySymbol && dot > 0 && node.Name[(dot + 1)..] == symbol.Name && CanRenameMember(nodeType, node.NameSpan))
                 edits.AddRange(XamlEdits.RenameType(tree, node, ownerName + "." + newName));
             foreach (var attribute in node.Attributes)
             {
@@ -121,7 +131,7 @@ public sealed class CrossLanguageRenameService
                     var colon = attribute.Name.IndexOf(':'); var prefix = colon < 0 || colon > memberDot ? "" : attribute.Name[..(colon + 1)];
                     edits.Add(new(new(attribute.Span.Start, attribute.Name.Length), prefix + newName + attribute.Name[memberDot..], attribute.Name));
                 }
-                else if (!renamingType && symbol is IPropertySymbol or IEventSymbol && attribute.Name == symbol.Name && Inherits(nodeType, declaringType))
+                else if (!renamingType && symbol is IPropertySymbol or IEventSymbol && attribute.Name == symbol.Name && CanRenameMember(nodeType, attribute.Span))
                     edits.Add(new(new(attribute.Span.Start, attribute.Name.Length), newName, attribute.Name));
                 var value = attribute.Value;
                 if (renamingType)
@@ -129,13 +139,44 @@ public sealed class CrossLanguageRenameService
                     if (Directive(node, attribute.Name, "DataType") || attribute.Name == "TargetType") value = RenameTypeToken(value, node, compilation, declaringType, newName);
                     value = RenameTypeExtension(value, node, compilation, declaringType, newName);
                 }
-                else if (symbol is IMethodSymbol && Inherits(codeBehind, declaringType) && value == symbol.Name && Members(nodeType).OfType<IEventSymbol>().Any(e => e.Name == attribute.Name)) value = newName;
+                else if (symbol is IMethodSymbol && value == symbol.Name && NearestMembers(nodeType, attribute.Name).OfType<IEventSymbol>().Any() && CanRenameMember(codeBehind, attribute.ValueSpan, publicOnly: false)) value = newName;
                 if (value != attribute.Value) edits.Add(XamlEdits.SetAttribute(tree, node, attribute.Name, value));
                 else if (!renamingType && attribute.Value.StartsWith('{') && attribute.Value.Contains(symbol.Name, StringComparison.Ordinal))
                     diagnostics.Add(new("RENAME101", $"Review markup extension '{attribute.Name}': binding paths and custom extensions are not rewritten without an unambiguous data-context symbol.", Severity.Warning, attribute.ValueSpan.Start, attribute.ValueSpan.Length, file));
+                else if (renamingType && attribute.Value.Contains(symbol.Name, StringComparison.Ordinal) && (attribute.Name == "Selector" || attribute.Value.StartsWith('{')))
+                    diagnostics.Add(new("RENAME103", $"Review '{attribute.Name}': this selector or extension is outside the supported type-reference grammar and has not been rewritten.", Severity.Warning, attribute.ValueSpan.Start, attribute.ValueSpan.Length, file));
             }
         }
         return edits;
+    }
+    private static ISymbol[] NearestMembers(INamedTypeSymbol? type, string name)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            var members = current.GetMembers(name).Where(m => !m.IsImplicitlyDeclared).ToArray();
+            if (members.Length > 0) return members; // A new/hidden member shadows the base lookup.
+        }
+        return [];
+    }
+    private static bool BindsMember(INamedTypeSymbol? owner, ISymbol target, bool publicOnly)
+    {
+        var candidates = NearestMembers(owner, target.Name);
+        if (candidates.Length != 1 || candidates[0].Kind != target.Kind || (publicOnly && candidates[0].DeclaredAccessibility != Accessibility.Public)) return false;
+        var actual = OverrideRoot(candidates[0]); var expected = OverrideRoot(target);
+        return actual.Kind == expected.Kind && actual.MetadataName == expected.MetadataName && actual.ContainingType is { } a && expected.ContainingType is { } b && SameType(a, b);
+    }
+    private static ISymbol OverrideRoot(ISymbol symbol)
+    {
+        while (true)
+        {
+            ISymbol? parent = symbol switch
+            {
+                IPropertySymbol p => p.OverriddenProperty, IEventSymbol e => e.OverriddenEvent,
+                IMethodSymbol m => m.OverriddenMethod, _ => null
+            };
+            if (parent is null) return symbol;
+            symbol = parent;
+        }
     }
     private static string RenameTypeExtension(string value, XamlElement node, Compilation compilation, INamedTypeSymbol type, string newName)
     {
@@ -172,13 +213,4 @@ public sealed class CrossLanguageRenameService
         return null;
     }
     private static bool SameType(INamedTypeSymbol? a, INamedTypeSymbol b) => a is not null && a.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == b.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) && a.ContainingAssembly.Identity.Equals(b.ContainingAssembly.Identity);
-    private static bool Inherits(INamedTypeSymbol? type, INamedTypeSymbol target)
-    {
-        for (var current = type; current is not null; current = current.BaseType) if (SameType(current, target)) return true;
-        return false;
-    }
-    private static IEnumerable<ISymbol> Members(INamedTypeSymbol? type)
-    {
-        for (var current = type; current is not null; current = current.BaseType) foreach (var member in current.GetMembers()) yield return member;
-    }
 }
