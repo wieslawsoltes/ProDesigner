@@ -117,6 +117,9 @@ public sealed partial class DesignerWorkbench
     });
     private void KeyPressed(object? sender, KeyEventArgs e)
     {
+        // Modal editors and prototypes own their keyboard input. Canvas shortcuts must never
+        // delete, nudge or undo the document behind a dialog; child editors still receive keys.
+        if (_overlay.IsVisible && e.Key != Key.Escape) return;
         var control = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         if (control)
         {
@@ -131,7 +134,11 @@ public sealed partial class DesignerWorkbench
             else if (e.Key == Key.V && !_editor.IsKeyboardFocusWithin && e.Source is not TextBox) { Execute("paste"); e.Handled = true; }
             return;
         }
-        if (e.Key == Key.Escape) { _overlay.IsVisible = false; _surface.CancelGesture(); _surface.SetInteractive(false); return; }
+        if (e.Key == Key.Escape)
+        {
+            _overlay.IsVisible = false; _surface.CancelGesture(); _surface.SetInteractive(false);
+            Focus(); e.Handled = true; return;
+        }
         if (_editor.IsKeyboardFocusWithin || _inspector.IsKeyboardFocusWithin || e.Source is TextBox) return;
         if (e.Key is Key.Delete or Key.Back) { Execute("delete"); e.Handled = true; }
         else if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
@@ -192,11 +199,14 @@ public sealed partial class DesignerWorkbench
     }
     private void ShowDialog(string title, Control content)
     {
+        _surface.CancelGesture();
         _overlay.Children.Clear();
         var heading = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto") };
         Place(heading, Text(title, 17, "#E2DCF5"), 0, 0); Place(heading, Button("×", "Close dialog", () => _overlay.IsVisible = false), 0, 1);
         var body = Column(heading, content); body.Spacing = 20;
-        var border = new Border { Child = body, Background = Brush.Parse("#22252F"), BorderBrush = Brush.Parse("#454051"), BorderThickness = new(1), CornerRadius = new(14), Padding = new(24), Width = 620, MaxHeight = 760, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+        var border = new Border { Child = body, Background = Brush.Parse("#22252F"), BorderBrush = Brush.Parse("#454051"), BorderThickness = new(1), CornerRadius = new(14), Padding = new(24), Width = 620, MaxHeight = 760, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Focusable = true };
+        KeyboardNavigation.SetTabNavigation(border, KeyboardNavigationMode.Cycle);
         _overlay.Children.Add(border); _overlay.IsVisible = true;
+        if (!content.Focus()) border.Focus();
     }
 }
