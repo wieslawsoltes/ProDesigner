@@ -66,8 +66,13 @@ test('workspace recovery, visual authoring dialogs, and vector geometry', async 
   await page.waitForTimeout(300);
   await page.screenshot({ path: testInfo.outputPath('prodesigner-vector-editor.png') });
   await page.keyboard.press('Escape');
-  await page.waitForFunction(() => localStorage.getItem('prodesigner.recovery')?.includes('Path'), null, { timeout: 15000 });
   const beforeReload = await page.evaluate(() => window.prodesigner.state().source);
+  await page.waitForFunction(expected => {
+    const raw = localStorage.getItem('prodesigner.recovery');
+    if (!raw) return false;
+    const workspace = JSON.parse(JSON.parse(raw).payload);
+    return workspace.documents[workspace.activeDocument].source === expected;
+  }, beforeReload, { timeout: 15000 });
   await page.reload();
   await page.waitForFunction(() => window.prodesigner?.state().ready, null, { timeout: 150000 });
   await page.waitForTimeout(300);

@@ -22,7 +22,7 @@ jobs:
       - name: Pack
         shell: bash
         run: |
-          VERSION=0.1.0-alpha.1
+          VERSION=$(dotnet msbuild src/ProDesigner.Core/ProDesigner.Core.csproj -nologo -getProperty:Version)
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF_NAME#v}"; fi
           mkdir -p artifacts/packages
           for project in src/*/*.csproj; do dotnet pack "$project" -c Release -p:Version="$VERSION" -o artifacts/packages; done

@@ -19,7 +19,11 @@ public sealed class PreviewProcessClient : IAsyncDisposable
     private PreviewProcessClient(NamedPipeServerStream pipe, Process process) { _pipe = pipe; _process = process; }
     public static async Task<PreviewProcessClient> StartAsync(string executable, bool headless = false, CancellationToken cancellationToken = default)
     {
-        var pipeName = "prodesigner-" + Guid.NewGuid().ToString("N");
+        var name = "pd-" + Guid.NewGuid().ToString("N");
+        // Absolute Unix pipe paths avoid the runtime's CoreFxPipe_ prefix and macOS TMPDIR length limit.
+        var pipeName = OperatingSystem.IsWindows() ? name : Path.Combine(Path.GetTempPath(), name);
+        if (!OperatingSystem.IsWindows() && System.Text.Encoding.UTF8.GetByteCount(pipeName) >= 100)
+            pipeName = Path.Combine("/tmp", name);
         var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var start = new ProcessStartInfo { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         if (executable.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))

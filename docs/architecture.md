@@ -6,6 +6,11 @@
 flowchart TD
   Desktop[Desktop host] --> Workbench
   Browser[WebAssembly host] --> Workbench
+  Workbench --> Authoring[ProDesigner.Authoring]
+  Workbench --> Persistence[ProDesigner.Persistence]
+  Desktop --> Protocol[ProDesigner.PreviewProtocol]
+  Protocol --> Worker[Supervised preview process]
+  Worker --> Runtime[ProDesigner.Runtime]
   Workbench --> Preview[ProDesigner.Avalonia]
   Workbench --> XamlX[ProDesigner.XamlX]
   Preview --> Design[ProDesigner.Design]
@@ -30,7 +35,7 @@ XamlX is a compiler frontend, not a lossless document store. Serializing a seman
 
 A visual operation prepares TextEdit records. EditApplication checks bounds, overlap and optional expected old text before constructing a new source string. DesignerSession validates visual transactions before publication, increments the version, records undo and notifies the UI. Invalid source edits are allowed only through the text-edit path; they preserve the last valid syntax tree and disable visual transactions. Gesture commits carry the version captured on pointer-down, preventing a stale drag from overwriting intervening edits.
 
-Node IDs are document-local structural paths. They are not durable object identities across arbitrary structural reordering. Name-aware identity reconciliation and cross-file symbol maps are future work. Plugins must re-resolve nodes after transactions and must not retain mutable node references across source versions.
+Node IDs are document-local structural paths. They are not durable object identities across arbitrary structural reordering. Visual transactions reconcile selection by source spans, but durable identity across arbitrary structural changes and cross-file symbol maps remain future work. Plugins must re-resolve nodes after transactions and must not retain mutable node references across source versions.
 
 ## Preview boundary
 
@@ -38,19 +43,19 @@ PreviewBuilder creates only known Avalonia control types. It maps source node ID
 
 DesignSurface composes PreviewFrames, scrolling and zoom. Each frame overlays selection adorners and handles source-linked gestures. Automatic-layout controls retain their layout semantics. Free positioning, object guides, and alignment/distribution are restricted to Canvas. The preview is rebuilt after debounced source changes; selection overlays update independently.
 
-Desktop trusted runtime preview uses Avalonia.Markup.Xaml.Loader, which executes XAML through Avalonia's XamlX pipeline. It is deliberately explicit and currently in-process. The desktop host now combines a cancellable SDK builder with the standalone runtime library to load project controls and code-behind roots. AssemblyDependencyResolver and a collectible load context resolve project dependencies while sharing the host’s Avalonia assemblies. This is not a sandbox or a guarantee of immediate unloading; global framework caches can retain references. Application-wide resources, incompatible Avalonia major versions, isolated processes and code hot-reload need further work.
+Desktop trusted runtime preview uses Avalonia.Markup.Xaml.Loader, which executes XAML through Avalonia's XamlX pipeline. The default desktop path executes it in a supervised child process after explicit trust; the reusable runtime library also supports hosts that deliberately choose in-process loading. The desktop host now combines a cancellable SDK builder with the standalone runtime library to load project controls and code-behind roots. AssemblyDependencyResolver and a collectible load context resolve project dependencies while sharing the host’s Avalonia assemblies. This is not a sandbox or a guarantee of immediate unloading; global framework caches can retain references. Complete application-wide resources, incompatible Avalonia major versions, embedded process-rendered artboards and C# hot reload need further work.
 
 ## Roslyn and project resolution
 
 RoslynCodeService provides syntax diagnostics, structural handler insertion, compilation member discovery and semantic rename returning a changed Solution. The UI exposes syntax diagnostics, handler generation and asynchronous project-bound XAML diagnostics. XamlCompilationService resolves concrete syntax nodes to Roslyn project/reference symbols and reports unknown types, properties, attached properties and event handlers without executing them. It is not the complete Avalonia XamlX transform pipeline. Cross-file rename application and transactional XAML/C# refactoring remain unintegrated.
 
-WorkspaceBootstrap registers MSBuild before creating the workspace. SolutionWorkspace uses MSBuildWorkspace to load an evaluated solution and referenced projects and exposes compilation diagnostics. Its project inventory also reports raw XML framework/reference declarations; conditional and centrally managed values in that inventory are not advertised as fully evaluated metadata. Evaluation requires affirmative trust because imported targets can execute code. An explicit runtime-preview action can restore/build through DotNetProjectBuilder, using argument-list process invocation, bounded logs, cancellation and a timeout. Package-management UI and framework selection UI remain pending.
+WorkspaceBootstrap registers MSBuild before creating the workspace. SolutionWorkspace uses MSBuildWorkspace to load an evaluated solution and referenced projects and exposes compilation diagnostics. Its project inventory also reports raw XML framework/reference declarations; conditional and centrally managed values in that inventory are not advertised as fully evaluated metadata. Evaluation requires affirmative trust because imported targets can execute code. An explicit runtime-preview action can restore/build through DotNetProjectBuilder, using argument-list process invocation, bounded logs, cancellation and a timeout. The preview dialog offers target-framework selection from discovered project declarations. Package-management UI remains pending.
 
 ## Performance strategy
 
-Editing and preview are debounced (180 ms for source input and 160 ms for preview scheduling). Selection does not reparse source. Drag previews mutate the preview controls and publish one source transaction on release. Compiler/project services are host-injected and kept out of the browser startup path. History is bounded to 200 snapshots. Size/depth limits protect the parser.
+Editing and preview are debounced (180 ms for source input and 160 ms for preview scheduling). Selection does not reparse source. Drag previews mutate the preview controls and publish one source transaction on release. Compiler/project services are host-injected and kept out of the browser startup path. Source history is bounded to 200 snapshots and a 32 MiB text budget (while retaining the latest snapshot). Size/depth limits protect the parser.
 
-Current limitations are explicit: full-document parsing, full preview rebuilds, non-virtualized layer/property UI, snapshot history memory, synchronous XamlX validation and overlay layout work need profiling against large real applications. Parse duration in the status bar is measured; it is not a whole-frame performance claim.
+Current limitations are explicit: full-document parsing, full preview rebuilds, full layer-row reconstruction despite viewport virtualization, non-virtualized property UI, snapshot history memory, synchronous XamlX validation and overlay layout work need profiling against large real applications. Parse duration in the status bar is measured; it is not a whole-frame performance claim.
 
 ## Test layers
 

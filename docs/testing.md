@@ -8,9 +8,9 @@ Tests must cover both directions of every editing feature: source → tree/previ
 
 Before a release: require cross-platform CI and browser checks; inspect screenshots; review the capability ledger; inspect package contents; exercise a sample solution containing project and NuGet references; verify Pages boot from its repository subpath; confirm no secrets or local files are packaged. Current automation does not provide code signing, notarization, a security sandbox, or proof of full professional designer parity.
 
-## Validated initial implementation
+## Validated 0.2 implementation
 
-The expanded implementation has 126 passing tests, including actual SDK builds, an MSBuild project-reference graph, project-bound Roslyn XAML diagnostics, runtime loading of a compiled custom control and code-behind root, pointer dragging/resizing/cancellation, and exported spline comparisons against Avalonia's evaluator. The local Release solution build completed with zero warnings and errors. GitHub Actions separately validates Windows, macOS, Linux and the actual WebAssembly workbench; consult the PR's latest run for current remote results.
+The expanded implementation has 128 passing tests, including actual SDK builds, an MSBuild project-reference graph, project-bound Roslyn XAML diagnostics, runtime loading of a compiled custom control and code-behind root, pointer dragging/resizing/cancellation, and exported spline comparisons against Avalonia's evaluator. The local Release solution build completed with zero warnings and errors. GitHub Actions separately validates Windows, macOS, Linux and the actual WebAssembly workbench; consult the PR's latest run for current remote results.
 
 GitHub Pages deployment is restricted to `main`; PR #1 was merged and its deployment succeeded. Feature branches build and test the website but do not bypass the repository's protected Pages environment. Merging reviewed feature PRs activates the configured publishing path. The initial implementation has no public NuGet publication or signed desktop release until the release workflow is invoked with the required credentials.
 
