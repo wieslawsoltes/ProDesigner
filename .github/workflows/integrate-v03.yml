@@ -1,0 +1,58 @@
+name: Integrate reviewed v03 source changes
+on:
+  push:
+    branches: [feat/components-prototyping-refactoring]
+    paths: ['.github/workflows/integrate-v03.yml']
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.repository == 'wieslawsoltes/ProDesigner' && github.ref == 'refs/heads/feat/components-prototyping-refactoring'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply exact, preflighted source integrations
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          changes = {}
+          def replace(path, old, new):
+              source = changes.get(path, Path(path).read_text(encoding='utf-8'))
+              if source.count(old) != 1: raise RuntimeError('Ambiguous integration anchor: ' + path + ': ' + old[:60])
+              changes[path] = source.replace(old, new, 1)
+          replace('ProDesigner.slnx', '<Folder Name="/Libraries/">', '<Folder Name="/Libraries/">\n    <Project Path="src/ProDesigner.DesignSystems/ProDesigner.DesignSystems.csproj" />\n    <Project Path="src/ProDesigner.Prototyping/ProDesigner.Prototyping.csproj" />')
+          replace('Directory.Build.props', '<Version>0.2.0-alpha.1</Version>', '<Version>0.3.0-alpha.1</Version>')
+          replace('src/ProDesigner.Workbench/DesignerCommands.cs', 'case "authoring": ShowAuthoringTools(); break;', 'case "authoring": ShowAuthoringTools(); break;\n            case "components": ShowComponentTools(); break;\n            case "prototype": ShowPrototypeTools(); break;\n            case "prototype-run": RunPrototype(); break;\n            case "constraints": ShowConstraintTools(); break;\n            case "studio-undo": UndoStudioTransaction(); break;\n            case "studio-redo": RedoStudioTransaction(); break;')
+          replace('src/ProDesigner.Workbench/DesignerCommands.cs', '["Design system / resources / styles / paint"] = ShowAuthoringTools,', '["Components and variants"] = ShowComponentTools, ["Prototype connections and flow map"] = ShowPrototypeTools,\n            ["Run interactive prototype"] = RunPrototype, ["Responsive constraints"] = ShowConstraintTools,\n            ["Undo grouped workspace edit"] = () => Guard(UndoStudioTransaction), ["Redo grouped workspace edit"] = () => Guard(RedoStudioTransaction),\n            ["Design system / resources / styles / paint"] = ShowAuthoringTools,')
+          replace('src/ProDesigner.Workbench/AuthoringTools.cs', 'ShowDialog("Design system & authoring", tabs);', 'ShowDialog("Design system & authoring", Column(Row(Button("Components", "Linked components and variants", ShowComponentTools), Button("Prototype", "Navigation flows", ShowPrototypeTools), Button("Constraints", "Responsive layout anchors", ShowConstraintTools)), tabs));')
+          replace('src/ProDesigner.Workbench/WorkspacePersistence.cs', 'd.Session.Selection.ToArray())).ToArray(), new Dictionary<string, string>(_surface.SampleData));', 'd.Session.Selection.ToArray(), DocumentId(d), d.Session.CaptureHistory(20))).ToArray(), new Dictionary<string, string>(_surface.SampleData), _designSystem, _prototype);')
+          replace('src/ProDesigner.Workbench/WorkspacePersistence.cs', 'session.SetSource(d.Source, "Restore workspace"); session.RestoreSavedBaseline(d.SavedSource);', 'session.SetSource(d.Source, "Restore workspace"); session.RestoreSavedBaseline(d.SavedSource);\n            if (d.History is not null) session.RestoreHistory(d.History);')
+          replace('src/ProDesigner.Workbench/WorkspacePersistence.cs', '_editor.Flush(); _documents.Clear(); _documents.AddRange(documents);', '_editor.Flush(); _ = StopExternalPreviewAsync(); _documents.Clear(); _documents.AddRange(documents);\n        _documentIds.Clear();\n        for (var i = 0; i < documents.Length; i++) _documentIds[documents[i]] = state.Documents[i].Id ?? Guid.NewGuid().ToString("N");\n        _designSystem = state.DesignSystem ?? ProDesigner.DesignSystems.DesignSystemState.Empty;\n        _prototype = state.Prototype ?? ProDesigner.Prototyping.PrototypeGraph.Empty;\n        _studioUndo.Clear(); _studioRedo.Clear();')
+          # Grouped undo/redo must consume each source history entry rather than creating inverse edits on top of it.
+          replace('src/ProDesigner.Workbench/ComponentTools.cs', 'ApplyStudioTransaction(operation.Text.Inverse(), operation.Before, false); _studioUndo.Pop(); _studioRedo.Push(operation);', '''var documents = _documents.ToDictionary(DocumentId);
+                  operation.Text.Inverse().Validate(documents.ToDictionary(p => p.Key, p => p.Value.Session.Source));
+                  foreach (var change in operation.Text.Changes.Where(c => c.Before != c.After))
+                      if (documents[change.DocumentId].Session.CaptureHistory(1).Undo.LastOrDefault()?.Source != change.Before)
+                          throw new InvalidOperationException("Another source operation must be undone before this workspace edit.");
+                  foreach (var change in operation.Text.Changes.Where(c => c.Before != c.After)) documents[change.DocumentId].Session.Undo();
+                  _designSystem = operation.Before; _studioUndo.Pop(); _studioRedo.Push(operation); RefreshDocument(); ScheduleRecovery();''')
+          replace('src/ProDesigner.Workbench/ComponentTools.cs', 'ApplyStudioTransaction(operation.Text, operation.After, false); _studioRedo.Pop(); _studioUndo.Push(operation);', '''var documents = _documents.ToDictionary(DocumentId);
+                  operation.Text.Validate(documents.ToDictionary(p => p.Key, p => p.Value.Session.Source));
+                  foreach (var change in operation.Text.Changes.Where(c => c.Before != c.After))
+                      if (documents[change.DocumentId].Session.CaptureHistory(1).Redo.LastOrDefault()?.Source != change.After)
+                          throw new InvalidOperationException("Source redo history no longer contains this workspace edit.");
+                  foreach (var change in operation.Text.Changes.Where(c => c.Before != c.After)) documents[change.DocumentId].Session.Redo();
+                  _designSystem = operation.After; _studioRedo.Pop(); _studioUndo.Push(operation); RefreshDocument(); ScheduleRecovery();''')
+          for path, content in changes.items(): Path(path).write_text(content, encoding='utf-8', newline='')
+          print('Integrated', len(changes), 'source files after validating all anchors.')
+          PY
+      - name: Commit integrations to the feature branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ProDesigner.slnx Directory.Build.props src/ProDesigner.Workbench
+          git commit -m 'feat: integrate components, prototype flows, responsive tools and source-history recovery'
+          git push origin HEAD:refs/heads/feat/components-prototyping-refactoring
