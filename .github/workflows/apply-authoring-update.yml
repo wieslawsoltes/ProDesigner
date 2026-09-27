@@ -60,9 +60,10 @@ jobs:
           subprocess.run(['git','add','--',*pending.keys()],check=True)
           print('All 63 source-file checksums verified.')
           PY
-      - name: Commit to feature branch and remove one-time transport
+      - name: Commit source files to the feature branch
         run: |
-          git rm -r .authoring-update .github/workflows/apply-authoring-update.yml
+          git restore --source=HEAD --staged --worktree .github/workflows/pages.yml
+          git rm -r .authoring-update
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat: isolated previews, recoverable workspaces, source-safe authoring and animation round-trips'
