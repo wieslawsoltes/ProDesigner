@@ -12,7 +12,13 @@ try {
     state: () => JSON.parse(api.Snapshot()), bounds: name => JSON.parse(api.Bounds(name)), command: command => api.Command(command),
     select: name => api.Select(name), setProperty: (name, value) => api.SetProperty(name, value),
     exportWorkspace: () => api.ExportWorkspace(), importWorkspace: json => api.ImportWorkspace(json),
-    insert: name => api.Insert(name), setSource: source => api.SetSource(source)
+    insert: name => api.Insert(name), setSource: source => api.SetSource(source),
+    captureComponent: name => api.CaptureLinkedComponent(name), insertComponent: id => api.InsertLinkedComponent(id),
+    updateComponent: (id, source) => api.UpdateLinkedComponent(id, source),
+    setComponentOverride: (id, target, property, value) => api.SetLinkedOverride(id, target, property, value),
+    configurePrototype: (sourceIndex, control, destinationIndex) => api.ConfigurePrototype(sourceIndex, control, destinationIndex),
+    prototypeState: () => JSON.parse(api.PrototypeStateJson()), prototypeBounds: name => JSON.parse(api.PrototypeBounds(name)),
+    prototypeBack: () => api.PrototypeBack()
   };
   await runtime.runMain(config.mainAssemblyName, []);
   const wait = setInterval(() => {
