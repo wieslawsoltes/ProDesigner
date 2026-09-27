@@ -45,4 +45,16 @@ public class AuthoringTests
     { var path=VectorPathModel.Parse("M0,0 C10,20 30,40 50,60");path.SetPoint(1,0,new(15,25));Assert.Equal("M 0,0 C 15,25 30,40 50,60",path.ToData()); }
     [Fact] public void UnknownPathCommandsAreNeverSilentlyDiscarded() => Assert.Throws<FormatException>(()=>VectorPathModel.Parse("M0,0 A10,10 0 0 1 20,20"));
     [Fact] public void InvalidGradientIsRejected() => Assert.Throws<ArgumentException>(()=>new GradientModel(0,0,1,1,[new(-1,"Red"),new(1,"Blue")]).ToXaml());
+    [AvaloniaFact] public void ReparentedControlRemainsValidRuntimeXaml()
+    {
+        var tree = XamlSyntaxTree.Parse("<Grid xmlns='https://github.com/avaloniaui' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'><Canvas><Button x:Name='MoveMe'/></Canvas><StackPanel/></Grid>");
+        var source = EditApplication.Apply(tree.Source, XamlNames.Reparent(tree, tree.Elements[2], tree.Root.Children[1]));
+        using var preview = new RuntimePreviewEngine().Load(new(source, Trusted: true));
+        Assert.IsType<Button>(((StackPanel)((Grid)preview.Root).Children[1]).Children.Single());
+    }
+    [Fact] public void ReparentIntoTemplateRequiresExplicitNamescopeMigration()
+    {
+        var tree = XamlSyntaxTree.Parse("<Grid><Button/><ControlTemplate/></Grid>");
+        Assert.Throws<InvalidOperationException>(() => XamlNames.Reparent(tree, tree.Root.Children[0], tree.Root.Children[1]));
+    }
 }

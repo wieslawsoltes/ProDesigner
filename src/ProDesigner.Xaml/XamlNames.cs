@@ -108,8 +108,9 @@ public static partial class XamlNames
     public static IReadOnlyList<TextEdit> Reparent(XamlSyntaxTree tree, XamlElement element, XamlElement target)
     {
         if (element.Parent is null || element.DescendantsAndSelf().Contains(target)) throw new InvalidOperationException("Reparenting would create a cycle or move the root.");
-        if (Scope(element) != Scope(target) && Scope(element) != target)
+        var destinationScope = target.LocalName is "ControlTemplate" or "DataTemplate" or "TreeDataTemplate" or "ItemsPanelTemplate" ? target : Scope(target);
+        if (Scope(element) != destinationScope)
             throw new InvalidOperationException("Moving across template namescopes requires explicit reference migration. The source was not changed.");
-        return [XamlEdits.Delete(tree, element), XamlEdits.AppendChild(tree, target, ExportFragment(tree, element))];
+        return new[] { XamlEdits.Delete(tree, element) }.Concat(FragmentImporter.Append(tree, target, ExportFragment(tree, element))).ToArray();
     }
 }
