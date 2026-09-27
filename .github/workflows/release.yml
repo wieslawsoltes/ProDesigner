@@ -58,7 +58,9 @@ jobs:
         include:
           - { os: windows-latest, rid: win-x64 }
           - { os: ubuntu-latest, rid: linux-x64 }
-          - { os: macos-26, rid: osx-arm64 }
+          # Managed JIT deployment: ARM64 runtime/apphost assets are cross-published on the tested Intel macOS host.
+          - { os: macos-15-intel, rid: osx-arm64 }
+          - { os: macos-15-intel, rid: osx-x64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
