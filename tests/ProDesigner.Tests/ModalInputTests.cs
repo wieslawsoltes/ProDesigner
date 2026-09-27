@@ -17,7 +17,7 @@ public class ModalInputTests
         {
             Key.Delete => PhysicalKey.Delete, Key.Left => PhysicalKey.ArrowLeft,
             Key.Right => PhysicalKey.ArrowRight, Key.Escape => PhysicalKey.Escape,
-            Key.Z => PhysicalKey.KeyZ, _ => PhysicalKey.None
+            Key.Z => PhysicalKey.Z, _ => PhysicalKey.None
         };
         window.KeyPress(key, modifiers, physical, null);
         window.KeyRelease(key, modifiers, physical, null);

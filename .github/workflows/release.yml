@@ -58,9 +58,9 @@ jobs:
         include:
           - { os: windows-latest, rid: win-x64 }
           - { os: ubuntu-latest, rid: linux-x64 }
-          # Managed JIT deployment: ARM64 runtime/apphost assets are cross-published on the tested Intel macOS host.
-          - { os: macos-15-intel, rid: osx-arm64 }
-          - { os: macos-15-intel, rid: osx-x64 }
+          # Managed/JIT distributions: SDK RID assets are cross-published, not native macOS execution tests.
+          - { os: ubuntu-latest, rid: osx-arm64 }
+          - { os: ubuntu-latest, rid: osx-x64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -73,7 +73,7 @@ jobs:
       - name: Package desktop with native executable permissions
         shell: bash
         run: |
-          cp README.md LICENSE THIRD-PARTY-NOTICES.md "artifacts/${{ matrix.rid }}/"
+          cp README.md LICENSE THIRD-PARTY-NOTICES.md docs/platform-validation.md "artifacts/${{ matrix.rid }}/"
           tar -czf "artifacts/prodesigner-${{ matrix.rid }}.tar.gz" -C artifacts "${{ matrix.rid }}"
       - uses: actions/upload-artifact@v4
         with:

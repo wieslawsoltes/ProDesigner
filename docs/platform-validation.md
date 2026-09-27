@@ -1,12 +1,14 @@
 # Platform validation and deployment architecture
 
-The automatic desktop CI matrix runs the same complete suite on Windows x64, Linux x64 and macOS Intel (`macos-15-intel`). It includes actual SDK/MSBuild graph tests, file transactions, runtime previews, pointer input and modal keyboard behavior. The browser is built and exercised separately in Chromium.
+The desktop CI matrix retains the same complete suite on Windows x64, Linux x64 and macOS Intel (`macos-15-intel`). It includes actual SDK/MSBuild graphs, file transactions, runtime previews, pointer input and modal keyboard behavior. The actual browser application is published and exercised independently in Chromium.
 
-Apple Silicon runner jobs using `macos-latest` and then `macos-26` remained queued during v0.3 development. The macOS test suite was moved to the supported standard Intel host; tests were not removed or marked skipped. Consult the final PR run for the actual result rather than interpreting an earlier queued/cancelled run as a pass.
+Apple Silicon runner jobs using `macos-latest` and `macos-26`, followed by `macos-15-intel`, remained queued during v0.3 development. The macOS test job is retained with no tests removed or skipped. Consult the final PR/main run for its real status: queued or cancelled is not a pass. An earlier macOS run exposed a test dispatcher-initialization race; the affected KeySpline tests now use AvaloniaTheory so framework objects are created on the UI dispatcher.
 
-The release matrix produces `win-x64`, `linux-x64`, `osx-x64` and `osx-arm64` self-contained managed/JIT distributions. The ARM64 apphost and runtime assets are cross-published with the .NET SDK on the Intel macOS host; this is not Native AOT. A successful ARM64 publish is not evidence of native Apple Silicon runtime testing. This distinction remains part of the release qualification record.
+## Packaging is distinct from platform execution
 
-Contributors can run the complete suite directly on an Apple Silicon development machine:
+The release matrix produces `win-x64`, `linux-x64`, `osx-x64` and `osx-arm64` self-contained managed/JIT distributions. Both macOS packages are cross-published by the .NET SDK on a Linux host using their platform-specific apphost, runtime and NuGet native assets. This is not Native AOT and does not involve compilation of Apple-specific native source. A successful publish verifies packaging, **not native macOS or Apple Silicon execution**. This release does not infer macOS runtime validation from Windows/Linux/headless/browser results.
+
+macOS downloads include this qualification note. Signing, notarization, native-platform accessibility checks and representative real-solution performance acceptance remain separate outstanding tasks. Native macOS validation can be run from the same source:
 
 ```sh
 git submodule update --init --recursive
@@ -14,4 +16,4 @@ dotnet build ProDesigner.slnx -c Release
 dotnet test tests/ProDesigner.Tests -c Release --no-build
 ```
 
-Signing, notarization, complete native-platform accessibility checks and large real-solution performance acceptance are separate outstanding qualification tasks. No workflow weakens the protected Pages environment or grants project execution trust from imported workspace data.
+The main/PR macOS job remains independent of the portable release-package builder. No workflow weakens the protected Pages environment or restores execution trust from imported workspace data. Exact tested commits and platform outcomes are recorded in PR/release validation, not implied by the existence of downloadable packages.
