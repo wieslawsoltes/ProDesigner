@@ -33,6 +33,8 @@ public sealed partial class DesignerWorkbench
             case "prototype": ShowPrototypeTools(); break;
             case "prototype-run": RunPrototype(); break;
             case "constraints": ShowConstraintTools(); break;
+            case "refactor": ShowProjectRefactoring(); break;
+            case "refactor-undo": _ = UndoRenameFromUiAsync(); break;
             case "studio-undo": UndoStudioTransaction(); break;
             case "studio-redo": RedoStudioTransaction(); break;
             case "vector": ShowVectorEditor(); break;
@@ -145,6 +147,7 @@ public sealed partial class DesignerWorkbench
         var items = new StackPanel { Spacing = 4 };
         var commands = new Dictionary<string, Action>
         {
+            ["Project-aware XAML / C# rename"] = ShowProjectRefactoring, ["Undo last project rename"] = () => _ = UndoRenameFromUiAsync(),
             ["Components and variants"] = ShowComponentTools, ["Prototype connections and flow map"] = ShowPrototypeTools,
             ["Run interactive prototype"] = RunPrototype, ["Responsive constraints"] = ShowConstraintTools,
             ["Undo grouped workspace edit"] = () => Guard(UndoStudioTransaction), ["Redo grouped workspace edit"] = () => Guard(RedoStudioTransaction),

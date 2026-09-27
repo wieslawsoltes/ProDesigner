@@ -19,12 +19,12 @@ public static class WorkspaceBootstrap
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static IWorkspaceService Create() => new SolutionWorkspace();
 }
-public sealed class SolutionWorkspace : IWorkspaceService
+public sealed partial class SolutionWorkspace : IWorkspaceService
 {
     private MSBuildWorkspace? _workspace;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentQueue<DesignDiagnostic> _diagnostics = new();
-    public Solution? Solution => _workspace?.CurrentSolution;
+    public Solution? Solution => _refactoringSnapshot ?? _workspace?.CurrentSolution;
     public async Task<IReadOnlyList<ProjectSummary>> OpenAsync(string path, bool trusted, CancellationToken cancellationToken = default)
     {
         if (!trusted) throw new UnauthorizedAccessException("MSBuild evaluates project code. Explicitly trust this workspace before loading it.");
@@ -35,7 +35,7 @@ public sealed class SolutionWorkspace : IWorkspaceService
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            _workspace?.Dispose(); _diagnostics.Clear();
+            _workspace?.Dispose(); _refactoringSnapshot = null; _diagnostics.Clear();
             _workspace = MSBuildWorkspace.Create(new Dictionary<string, string> { ["Configuration"] = "Debug" });
             _workspace.RegisterWorkspaceFailedHandler(args => _diagnostics.Enqueue(new("MSBUILD001", args.Diagnostic.Message, Severity.Warning, File: path)), null);
             _workspace.LoadMetadataForReferencedProjects = false;
@@ -52,7 +52,7 @@ public sealed class SolutionWorkspace : IWorkspaceService
         {
             var result = _diagnostics.ToList();
             if (_workspace is null) return result;
-            foreach (var project in _workspace.CurrentSolution.Projects)
+            foreach (var project in Solution!.Projects)
             {
                 var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
                 if (compilation is null) continue;
@@ -69,7 +69,7 @@ public sealed class SolutionWorkspace : IWorkspaceService
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var project = _workspace?.CurrentSolution.Projects.FirstOrDefault(p => string.Equals(p.FilePath, projectPath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+            var project = Solution?.Projects.FirstOrDefault(p => string.Equals(p.FilePath, projectPath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
             if (project is null) return [new("PROJECT001", "The project is not loaded in the Roslyn workspace.", Severity.Warning)];
             var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
             return compilation is null ? [] : new ProDesigner.Roslyn.XamlCompilationService().Analyze(source, compilation).Diagnostics;
@@ -81,7 +81,7 @@ public sealed class SolutionWorkspace : IWorkspaceService
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var project = _workspace?.CurrentSolution.Projects.FirstOrDefault(p => string.Equals(p.FilePath, projectPath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+            var project = Solution?.Projects.FirstOrDefault(p => string.Equals(p.FilePath, projectPath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
             if (project is null) return [];
             var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
             if (compilation is null) return [];

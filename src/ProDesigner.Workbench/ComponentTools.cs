@@ -42,7 +42,7 @@ public sealed partial class DesignerWorkbench
         var edits = FragmentImporter.Append(Session.Tree, parent, instance.Baseline);
         var source = EditApplication.Apply(Session.Source, edits); var updated = XamlSyntaxTree.Parse(source);
         var root = updated.Elements.Single(n => XamlNames.Name(n) == instance.RootName && XamlNames.Scope(n) == updated.Root);
-        instance = instance with { Baseline = source.Substring(root.Span.Start, root.Span.Length) };
+        instance = instance with { Baseline = source.Substring(root.Span.Start, root.Span.Length), NamespaceContext = new(XamlNames.Namespaces(root)) };
         var after = _designSystem with { Instances = [.. _designSystem.Instances, instance] };
         ApplyStudioTransaction(new("Insert linked component", [new(instance.DocumentId, Session.Source, source)]), after);
         SelectByName(instance.RootName); return instance;
@@ -62,7 +62,7 @@ public sealed partial class DesignerWorkbench
         }).ToArray();
         var changes = updates.GroupBy(u => u.DocumentId).Select(g =>
         {
-            var document = documents[g.Key]; return new DocumentReplacement(g.Key, document.Session.Source, EditApplication.Apply(document.Session.Source, g.Select(u => u.Edit)));
+            var document = documents[g.Key]; return new DocumentReplacement(g.Key, document.Session.Source, EditApplication.Apply(document.Session.Source, g.SelectMany(u => u.NamespaceEdits ?? []).Distinct().Concat(g.Select(u => u.Edit))));
         }).ToArray();
         var after = _designSystem with
         {
@@ -80,7 +80,7 @@ public sealed partial class DesignerWorkbench
         var document = _documents.Single(d => DocumentId(d) == instance.DocumentId);
         var pending = instance with { Variant = variant, Overrides = overrides };
         var update = ComponentEngine.PrepareUpdate(definition, pending, document.Session.Tree);
-        var source = EditApplication.Apply(document.Session.Source, [update.Edit]);
+        var source = EditApplication.Apply(document.Session.Source, (update.NamespaceEdits ?? []).Concat([update.Edit]));
         var after = _designSystem with { Instances = _designSystem.Instances.Select(i => i.Id == instanceId ? update.UpdatedInstance : i).ToArray() };
         ApplyStudioTransaction(new("Override linked instance", [new(instance.DocumentId, document.Session.Source, source)]), after);
     }

@@ -12,12 +12,12 @@ public sealed record ComponentVariant(string Name, ComponentOverride[] Overrides
 public sealed record ComponentDefinition(string Id, string Name, long Revision, string Xaml, ComponentVariant[] Variants);
 /// <summary>The last generated fragment is a conflict baseline, not a replacement for the document source.</summary>
 public sealed record ComponentInstance(string Id, string ComponentId, string DocumentId, string RootName, string? Variant,
-    ComponentOverride[] Overrides, long AppliedRevision, string Baseline);
+    ComponentOverride[] Overrides, long AppliedRevision, string Baseline, Dictionary<string, string>? NamespaceContext = null);
 public sealed record DesignSystemState(ComponentDefinition[] Components, ComponentInstance[] Instances)
 {
     public static DesignSystemState Empty => new([], []);
 }
-public sealed record ComponentUpdate(string InstanceId, string DocumentId, TextEdit Edit, ComponentInstance UpdatedInstance);
+public sealed record ComponentUpdate(string InstanceId, string DocumentId, TextEdit Edit, ComponentInstance UpdatedInstance, TextEdit[]? NamespaceEdits = null);
 public sealed class ComponentConflictException(string message) : InvalidOperationException(message);
 
 /// <summary>Source-preserving component materialization with explicit variants, instance overrides and conflict detection.</summary>
@@ -102,7 +102,9 @@ public static class ComponentEngine
         var node = matches[0]; var current = document.Source.Substring(node.Span.Start, node.Span.Length);
         if (current != instance.Baseline) throw new ComponentConflictException($"Instance '{instance.RootName}' was edited directly. Preserve it by detaching, or record its changes as explicit overrides before updating.");
         var rendered = Render(definition, instance.RootName, instance.Variant, instance.Overrides);
-        return new(instance.Id, instance.DocumentId, new(node.Span, rendered, current), instance with { Baseline = rendered, AppliedRevision = definition.Revision });
+        var imported = FragmentImporter.Prepare(document, node.Parent ?? document.Root, rendered);
+        return new(instance.Id, instance.DocumentId, new(node.Span, imported.Source, current),
+            instance with { Baseline = imported.Source, AppliedRevision = definition.Revision, NamespaceContext = new(imported.Namespaces) }, imported.RootEdits.ToArray());
     }
     public static void Validate(ComponentDefinition definition)
     {
@@ -136,9 +138,23 @@ public static class ComponentEngine
         {
             if (instance is null || !identities.Add(instance.Id) || !components.Contains(instance.ComponentId) || !targets.Add((instance.DocumentId, instance.RootName)) || instance.Overrides is null || instance.Overrides.Length > 2000 || string.IsNullOrWhiteSpace(instance.DocumentId) || instance.AppliedRevision < 1)
                 throw new InvalidDataException("Invalid or duplicate component instance.");
-            XmlConvert.VerifyNCName(instance.RootName); XamlSyntaxTree.Parse(instance.Baseline);
+            XmlConvert.VerifyNCName(instance.RootName); ValidateBaseline(instance);
             foreach (var value in instance.Overrides) ValidateOverride(value);
         }
+    }
+    private static void ValidateBaseline(ComponentInstance instance)
+    {
+        if (instance.NamespaceContext is null) { XamlSyntaxTree.Parse(instance.Baseline); return; }
+        if (instance.NamespaceContext.Count > 256) throw new InvalidDataException("Too many instance namespace aliases.");
+        foreach (var pair in instance.NamespaceContext)
+        {
+            XmlConvert.VerifyName(pair.Key);
+            if ((pair.Key != "xmlns" && !pair.Key.StartsWith("xmlns:", StringComparison.Ordinal)) || pair.Value is null)
+                throw new InvalidDataException("Invalid instance namespace context.");
+        }
+        var aliases = string.Join(" ", instance.NamespaceContext.Select(p => $"{p.Key}=\"{XamlEdits.Escape(p.Value)}\""));
+        var tree = XamlSyntaxTree.Parse($"<Fragment {aliases}>{instance.Baseline}</Fragment>");
+        if (tree.Root.Children.Count != 1) throw new InvalidDataException("An instance baseline must contain one root element.");
     }
     private static XamlElement ResolveTarget(XamlSyntaxTree tree, string name)
     {
