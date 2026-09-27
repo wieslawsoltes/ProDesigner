@@ -10,6 +10,8 @@ using ProDesigner.Xaml;
 
 namespace ProDesigner.Preview;
 
+public enum PreviewRefreshKind { FullBuild, PropertyDelta, Unchanged }
+
 public sealed class DesignSurface : UserControl
 {
     private readonly Canvas _canvas = new() { Width = 2800, Height = 2000 };
@@ -18,6 +20,15 @@ public sealed class DesignSurface : UserControl
     private readonly List<PreviewFrame> _frames = [];
     private DesignerSession? _session;
     private double _zoom = .8;
+    private XamlSyntaxTree? _builtTree;
+    private DesignerSession? _builtSession;
+    private PreviewProfile[] _builtProfiles = [];
+    private Dictionary<string, string> _builtData = [];
+    private bool _animationMutated;
+    public PreviewRefreshKind LastRefresh { get; private set; }
+    public long FullBuildCount { get; private set; }
+    public long PropertyDeltaCount { get; private set; }
+    public Control? GetPreviewControl(string name) => _frames.FirstOrDefault()?.FindByName(name);
     public IReadOnlyList<PreviewProfile> Profiles { get; set; } = [PreviewProfile.Defaults[0], PreviewProfile.Defaults[1]];
     public IReadOnlyList<DesignDiagnostic> Diagnostics { get; private set; } = [];
     public IReadOnlyDictionary<string, string> SampleData { get; set; } = new PreviewBuilder().SampleData;
@@ -77,7 +88,19 @@ public sealed class DesignSurface : UserControl
     public void Rebuild()
     {
         if (_session is null || !_session.IsValid) return;
-        _canvas.Children.Clear(); _frames.Clear();
+        if (!_animationMutated && _builtSession == _session && _builtTree is not null && _builtProfiles.SequenceEqual(Profiles)
+            && _builtData.Count == SampleData.Count && _builtData.All(p => SampleData.TryGetValue(p.Key, out var value) && value == p.Value)
+            && Diagnostics.Count == 0 && PreviewPropertyDelta.Prepare(_builtTree, _session.Tree) is { } delta)
+        {
+            if (_frames.All(frame => frame.ApplyDelta(delta)))
+            {
+                _builtTree = _session.Tree;
+                LastRefresh = delta.Count == 0 ? PreviewRefreshKind.Unchanged : PreviewRefreshKind.PropertyDelta;
+                if (delta.Count > 0) PropertyDeltaCount++;
+                RefreshSelection(); return;
+            }
+        }
+        CancelGesture(); _canvas.Children.Clear(); _frames.Clear();
         var diagnostics = new List<DesignDiagnostic>();
         double x = 56, y = 64;
         foreach (var profile in Profiles)
@@ -95,14 +118,16 @@ public sealed class DesignSurface : UserControl
         _canvas.Width = Math.Max(1600, x + 80);
         _canvas.Height = Math.Max(1200, Profiles.Max(p => p.Height) + 200);
         Diagnostics = diagnostics.DistinctBy(d => (d.Code, d.Offset, d.Message)).ToArray();
+        _builtTree = _session.Tree; _builtSession = _session; _builtProfiles = Profiles.ToArray(); _builtData = new(SampleData);
+        _animationMutated = false; FullBuildCount++; LastRefresh = PreviewRefreshKind.FullBuild;
     }
     public void ApplyAnimation(string target, string property, double value)
     {
-        foreach (var frame in _frames) frame.ApplyAnimation(target, property, value);
+        _animationMutated = true; foreach (var frame in _frames) frame.ApplyAnimation(target, property, value);
     }
     public void ApplyAnimationValue(string target, string property, string value)
     {
-        foreach (var frame in _frames) if (frame.FindByName(target) is { } control) PreviewBuilder.ApplyProperty(control, property, value);
+        _animationMutated = true; foreach (var frame in _frames) if (frame.FindByName(target) is { } control) PreviewBuilder.ApplyProperty(control, property, value);
     }
     public void RefreshSelection() { foreach (var frame in _frames) frame.RefreshSelection(); }
     public void Align(Alignment alignment)
@@ -122,6 +147,7 @@ internal sealed class PreviewFrame : Grid
     private sealed record GestureItem(Control Control, DesignRect Bounds, double Width, double Height, double Left, double Top, bool CanvasChild);
     private readonly DesignerSession _session;
     private readonly PreviewResult _preview;
+    private readonly PreviewProfile _profile;
     private readonly SelectionOverlay _overlay;
     private readonly Dictionary<string, GestureItem> _initial = [];
     private Point _start;
@@ -134,7 +160,7 @@ internal sealed class PreviewFrame : Grid
     public event Action<string>? Status;
     public PreviewFrame(DesignerSession session, PreviewResult preview, PreviewProfile profile)
     {
-        _session = session; _preview = preview;
+        _session = session; _preview = preview; _profile = profile;
         Width = profile.Width; Height = profile.Height;
         Children.Add(preview.Root);
         _overlay = new SelectionOverlay(); Children.Add(_overlay);
@@ -148,6 +174,20 @@ internal sealed class PreviewFrame : Grid
     {
         var node = _session.Tree.Elements.FirstOrDefault(n => n.DisplayName == name);
         return node is not null ? _preview.Controls.GetValueOrDefault(node.Id) : null;
+    }
+    public bool ApplyDelta(IReadOnlyList<PreviewPropertyChange> changes)
+    {
+        if (changes.Count == 0) return true;
+        CancelGesture();
+        try
+        {
+            foreach (var change in changes)
+                if (!_preview.Controls.TryGetValue(change.NodeId, out var control) || !PreviewBuilder.ApplyProperty(control, change.Property, change.Value)) return false;
+            // Artboards own root dimensions, even when the source carries design-time Width/Height.
+            if (_preview.Controls.TryGetValue(_session.Tree.Root.Id, out var root)) { root.Width = _profile.Width; root.Height = _profile.Height; }
+            return true;
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException or OverflowException) { return false; }
     }
     public void SetInteractive(bool value) { CancelGesture(); _overlay.IsVisible = !value; _preview.Root.IsHitTestVisible = value; }
     public Dictionary<string, DesignRect> GetBounds()

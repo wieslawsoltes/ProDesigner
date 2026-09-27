@@ -58,10 +58,16 @@ The **Design** toolbar button opens Resources, Styles, Templates, Paint and Data
 
 Paint offers RGBA sliders, a color swatch/hex field and editable linear gradient stops. Add one `offset color` pair per line (offset 0–1). These operations write real brush/property objects; the bounded preview renders supported gradients.
 
-Insert **Path** from Assets, select it and click **Path**. Drag endpoints or Bézier handles, parse/edit M/L/C/Q/Z path data, and apply the final geometry as one source transaction. Arcs, shorthand commands and Boolean operations are not approximated or silently discarded.
+Insert **Path** from Assets, select it and click **Path**. Drag endpoints or Bézier handles, select/split segments and edit analytic arc radii/rotation/flags. All SVG path command families and Avalonia F0/F1 fill rules are parsed. Design and the command palette expose Union, Subtract, Intersect, XOR and stroke outlining for supported normalized sibling Paths. Operations commit one source transaction with undo; unsupported layout/reference cases are refused.
 
 ## Isolated preview and timeline updates
 
 The trusted runtime action now starts a supervised child process, not constructors in the workbench. Choose an available target framework when the loaded project advertises multiple targets. Valid XAML edits update the associated preview window live; malformed text retains its previous preview. **Stop isolated preview** cancels build/start/update operations and terminates the worker. Restart the preview to rebuild changed code. The child has your OS privileges, so trust is still mandatory.
 
 Animation **Import** lists representable named-target clips and diagnostic messages for unsupported source constructs. Color tracks accept #RRGGBB/#AARRGGBB. Custom imported splines and scalar/color keys persist in workspace files. The timeline's undo/redo controls have separate history from XAML. Source export remains explicit; importing unsupported playback semantics is rejected rather than changed.
+
+## Embedded runtime artboards and refactoring recovery
+
+Trusted runtime preview on desktop now renders inside the workbench through a supervised headless Avalonia/Skia worker. Select a viewport, toggle Interact to test actual project controls, or return to safe artboards. Stale source frames cannot drive edits or input. Stop terminates the worker. This is process separation, not an OS sandbox.
+
+The command palette's Refactoring journals / recovery tool discovers durable receipts and requests explicit target-file review before reading or restoring them. Undo/Redo project rename recheck file bytes and open buffers. See [the implementation guide](embedded-preview-vector-recovery.md) for the exact limits.

@@ -43,7 +43,7 @@ public class AuthoringTests
     { var path=VectorPathModel.Parse(source);Assert.Equal(path.ToData(),VectorPathModel.Parse(path.ToData()).ToData()); }
     [Fact] public void VectorPointEditingChangesOnlyItsSegment()
     { var path=VectorPathModel.Parse("M0,0 C10,20 30,40 50,60");path.SetPoint(1,0,new(15,25));Assert.Equal("M 0,0 C 15,25 30,40 50,60",path.ToData()); }
-    [Fact] public void UnknownPathCommandsAreNeverSilentlyDiscarded() => Assert.Throws<FormatException>(()=>VectorPathModel.Parse("M0,0 A10,10 0 0 1 20,20"));
+    [Fact] public void UnknownPathCommandsAreNeverSilentlyDiscarded() => Assert.Throws<FormatException>(()=>VectorPathModel.Parse("M0,0 R10,10 20,20"));
     [Fact] public void InvalidGradientIsRejected() => Assert.Throws<ArgumentException>(()=>new GradientModel(0,0,1,1,[new(-1,"Red"),new(1,"Blue")]).ToXaml());
     [AvaloniaFact] public void ReparentedControlRemainsValidRuntimeXaml()
     {

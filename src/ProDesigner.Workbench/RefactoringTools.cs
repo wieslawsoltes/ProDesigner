@@ -50,7 +50,7 @@ public sealed partial class DesignerWorkbench
             var receipt = await RenameStore.ApplyAsync(plan.Files.Select(f => new FileTextChange(f.Path, f.DiskBefore, f.After)).ToArray(), cancellationToken);
             // Once disk commit succeeds, complete buffer synchronization even if the caller cancels.
             SynchronizeRefactoredBuffers(plan, undo: false);
-            _renameHistory.Add((plan, receipt));
+            _renameHistory.Add((plan, receipt)); _renameRedo.Clear();
             while (_renameHistory.Count > 1 && (_renameHistory.Count > 20 || _renameHistory.Sum(h => h.Plan.Files.Sum(f => ((long)f.Before.Length + f.After.Length + f.DiskBefore.Length) * 2)) > 64 * 1024 * 1024)) _renameHistory.RemoveAt(0);
             _preparedRename = null;
             if (_workspace is IProjectRefactoringService service) await service.RefreshFilesAsync(plan.Files.Select(f => new OpenSourceFile(f.Path, f.After)).ToArray());
@@ -67,7 +67,7 @@ public sealed partial class DesignerWorkbench
         {
             await StopExternalPreviewAsync();
             await RenameStore.RevertAsync(item.Receipt, item.Plan.Files.Select(f => f.Path).ToArray(), cancellationToken);
-            SynchronizeRefactoredBuffers(item.Plan, undo: true); _renameHistory.RemoveAt(_renameHistory.Count - 1);
+            SynchronizeRefactoredBuffers(item.Plan, undo: true); _renameHistory.RemoveAt(_renameHistory.Count - 1); _renameRedo.Add(item);
             if (_workspace is IProjectRefactoringService service) await service.RefreshFilesAsync(item.Plan.Files.Select(f => new OpenSourceFile(f.Path, f.Before)).ToArray());
             RefreshDocument(); ScheduleRecovery(); SetStatus("Project rename reverted; previous unsaved buffers and disk baselines were restored separately.");
         }

@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/Libraries/">
+    <Project Path="src/ProDesigner.Geometry/ProDesigner.Geometry.csproj" />
     <Project Path="src/ProDesigner.DesignSystems/ProDesigner.DesignSystems.csproj" />
     <Project Path="src/ProDesigner.Prototyping/ProDesigner.Prototyping.csproj" />
     <Project Path="src/ProDesigner.PreviewProtocol/ProDesigner.PreviewProtocol.csproj" />

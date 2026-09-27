@@ -22,7 +22,7 @@ Playwright loads the real managed WebAssembly application, not a mocked DOM. Cov
 
 ## Interpreting CI
 
-The PR workflow builds/tests desktop on Windows, macOS and Linux, packs all 15 source libraries and publishes/tests the browser independently. Keep build, test and packaging outcomes separate. A successful package archive does not prove production API compatibility, rendering parity or public registry publication.
+The PR workflow builds/tests desktop on Windows, macOS and Linux, packs all 16 source libraries and publishes/tests the browser independently. Keep build, test and packaging outcomes separate. A successful package archive does not prove production API compatibility, rendering parity or public registry publication.
 
 Exact counts and the tested commit belong in the final PR validation record, linked to its Actions run. Do not preserve a stale numeric badge when tests change. Do not claim local execution when a change was only validated by GitHub-hosted CI.
 
@@ -30,6 +30,15 @@ Exact counts and the tested commit belong in the final PR validation record, lin
 
 Require a green final-head PR build, inspect browser results/screenshots, and review the capability ledger. Test representative solutions, conflict paths and recovery. Verify that imported workspaces never restore trust and that prototype playback does not mutate source. Confirm package contents, licenses and no private data.
 
-Pages deploys only merged `main` through the protected environment. Verify the public repository subpath boots the intended revision. Versioned releases package source, 15 libraries, desktop bundles, browser output and checksums. Confirm the publishing result separately from CI: NuGet push is conditional, signing/notarization are not implemented, and existing release downloads are not overwritten.
+Pages deploys only merged `main` through the protected environment. Verify the public repository subpath boots the intended revision. Versioned releases package source, 16 libraries, desktop bundles, browser output and checksums. Confirm the publishing result separately from CI: NuGet push is conditional, signing/notarization are not implemented, and existing release downloads are not overwritten.
 
 Remaining qualification includes large-solution frame/memory budgets, robust immutable/incremental identity, fuzzing, cancellation stress, full pointer/keyboard/platform coverage and accessibility audits. These are not replaced by the regression suite.
+
+
+## 0.4 regression layers
+
+The rendered-worker tests start an actual separate .NET process with Avalonia/Skia. They verify nonempty PNG pixels, pixel changes after actual mouse/text input, logical/device viewport sizes, named-control geometry, last-good source recovery and stale-hash rejection. Workbench tests invoke the real trust-confirmation command and wait for embedded frames, including a source edit during worker startup. View switching resets remote input state.
+
+Vector tests cross-check canonical grammar, arc flags/radii correction, smooth-control reflection, analytic subdivision and affine shear/reflection, curve flattening limits, Boolean filled regions and stroke caps. Workbench operations verify exact-source undo and refuse deleting externally referenced operand names.
+
+Incremental tests compare every element/attribute span against a fresh full XML parse across randomized edits, exercise empty values/entities/quote-breaking replacements, verify snapshot immutability and selection identity, and assert actual control reuse only for supported scalar deltas. Recovery tests reopen persisted receipts, review approved targets, restore/replay bytes and reject external encoding-only changes.

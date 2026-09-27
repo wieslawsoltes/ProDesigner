@@ -196,11 +196,13 @@ public sealed partial class DesignerWorkbench
             {
                 await StopExternalPreviewAsync(); _previewCancellation?.Dispose(); _previewCancellation = new CancellationTokenSource();
                 SetStatus("Building and starting isolated preview. Use Stop isolated preview to cancel.");
-                var token = _previewCancellation.Token;
-                var external = await _externalFactory(new(document.Session.Source, document.Path, document.ProjectPath, true, _chosenFramework), token);
+                var token = _previewCancellation.Token; var requestedSource = document.Session.Source; var requestedVersion = document.Session.Version;
+                var external = await _externalFactory(new(requestedSource, document.Path, document.ProjectPath, true, _chosenFramework), token);
                 if (token.IsCancellationRequested) { await external.DisposeAsync(); return; }
-                _externalPreview = external; _previewDocument = document; _previewRevision = document.Session.Version;
-                SetStatus("Isolated project preview connected · valid XAML edits update its window live."); return;
+                _externalPreview = external; _previewDocument = document; _previewRevision = requestedVersion;
+                if (external is IRenderedExternalPreview) ShowEmbeddedPreview();
+                await SynchronizeExternalPreviewAsync();
+                SetStatus("Isolated runtime artboard connected · edits update source-matched frames."); return;
             }
             SetStatus(document.ProjectPath is null ? "Loading trusted XAML…" : "Restoring and building the trusted project…");
             var preview = await _trustedPreview!(new(document.Session.Source, document.Path, document.ProjectPath, Trusted: true));

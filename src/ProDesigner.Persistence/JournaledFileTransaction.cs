@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace ProDesigner.Persistence;
 
-public sealed record FileTextChange(string Path, string ExpectedText, string NewText);
+public sealed record FileTextChange(string Path, string ExpectedText, string NewText, string? ExpectedHash = null);
 public sealed record FileTransactionEntry(string Path, byte[] Before, byte[] After, string BeforeHash, string AfterHash, int? UnixMode);
 public sealed record FileTransactionJournal(string Id, string State, FileTransactionEntry[] Entries);
 public sealed record FileTransactionReceipt(string Id, string JournalPath);
@@ -17,7 +17,7 @@ public partial class FileTransactionJsonContext : JsonSerializerContext;
 /// <summary>Preflighted multi-file replacement with a durable before/after journal and conflict-aware rollback.</summary>
 /// <remarks>Each file is replaced atomically. Filesystems do not offer atomic visibility across multiple paths;
 /// external editors must cooperate to eliminate the final check/replace race. No external change is intentionally overwritten.</remarks>
-public class JournaledFileTransaction
+public partial class JournaledFileTransaction
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private readonly string _journalRoot;
@@ -36,6 +36,7 @@ public class JournaledFileTransaction
                 var path = Path.GetFullPath(change.Path); ValidatePath(path);
                 if (!names.Add(path)) throw new InvalidOperationException("Duplicate file in transaction.");
                 var before = await ReadBoundedAsync(path, cancellationToken).ConfigureAwait(false);
+                if (change.ExpectedHash is not null && Hash(before) != change.ExpectedHash) throw new IOException("The file bytes changed after journal review: " + path);
                 var (encoding, preamble) = DetectEncoding(before);
                 var text = encoding.GetString(before, preamble, before.Length - preamble);
                 if (text != change.ExpectedText) throw new IOException("The file changed after refactoring was prepared: " + path);

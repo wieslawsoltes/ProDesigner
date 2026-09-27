@@ -57,7 +57,26 @@ public sealed class PreviewProcessClient : IAsyncDisposable
         return SendAsync("update", document, assemblyPath, cancellationToken);
     }
     public Task<PreviewResponse> PingAsync(CancellationToken cancellationToken = default) => SendAsync("ping", null, null, cancellationToken);
-    private async Task<PreviewResponse> SendAsync(string operation, TrustedPreviewRequest? document, string? assemblyPath, CancellationToken cancellationToken)
+    public async Task ResetInputAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await SendAsync("reset-input", null, null, cancellationToken).ConfigureAwait(false);
+        if (!response.Success) throw new InvalidOperationException(response.Error);
+    }
+    public async Task<RenderedPreviewFrame> RenderAsync(PreviewViewport viewport, string expectedSourceHash,
+        IReadOnlyList<PreviewInput>? input = null, CancellationToken cancellationToken = default)
+    {
+        viewport.Validate();
+        if (string.IsNullOrWhiteSpace(expectedSourceHash) || expectedSourceHash.Length != 64 || input?.Count > 128)
+            throw new ArgumentException("A source hash and bounded input batch are required.");
+        var inputs = input?.ToArray() ?? [];
+        foreach (var item in inputs) item.Validate();
+        var response = await SendAsync("render", null, null, cancellationToken, viewport, expectedSourceHash, inputs).ConfigureAwait(false);
+        if (!response.Success || response.Frame is null) throw new InvalidOperationException(response.Error ?? "No rendered frame was returned.");
+        response.Frame.Validate();
+        if (response.Frame.SourceHash != expectedSourceHash) throw new InvalidDataException("Rendered frame targets an outdated source revision.");
+        return response.Frame;
+    }
+    private async Task<PreviewResponse> SendAsync(string operation, TrustedPreviewRequest? document, string? assemblyPath, CancellationToken cancellationToken, PreviewViewport? viewport = null, string? sourceHash = null, PreviewInput[]? input = null)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); timeout.CancelAfter(ResponseTimeout);
@@ -65,9 +84,10 @@ public sealed class PreviewProcessClient : IAsyncDisposable
         try
         {
             var revision = Interlocked.Increment(ref _revision);
-            await PreviewWire.WriteAsync(_pipe, JsonSerializer.SerializeToUtf8Bytes(new PreviewRequest(revision, operation, document, assemblyPath), PreviewJsonContext.Default.PreviewRequest), timeout.Token).ConfigureAwait(false);
+            await PreviewWire.WriteAsync(_pipe, JsonSerializer.SerializeToUtf8Bytes(new PreviewRequest(revision, operation, document, assemblyPath, viewport, sourceHash, input), PreviewJsonContext.Default.PreviewRequest), timeout.Token).ConfigureAwait(false);
             var payload = await PreviewWire.ReadAsync(_pipe, timeout.Token).ConfigureAwait(false);
             var response = JsonSerializer.Deserialize(payload, PreviewJsonContext.Default.PreviewResponse) ?? throw new InvalidDataException("Empty preview response.");
+            if (response.ProtocolVersion != 2) throw new InvalidDataException("Incompatible preview protocol version.");
             if (response.Revision != revision) throw new InvalidDataException("Preview revision mismatch.");
             return response;
         }

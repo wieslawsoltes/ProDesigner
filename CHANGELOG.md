@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0-alpha.1
+
+- Embedded process-rendered runtime artboards with bounded PNG/source maps, revision checking, ordered input, reset and stale-frame rejection.
+- Portable complete SVG path command families and Avalonia fill rules; analytic arc/subdivision/affine operations; Skia Boolean and stroke-outline library and workbench commands.
+- Metadata-only startup journal discovery, approved-target review/recovery, conflict-aware replay and project rename redo.
+- Immutable public syntax snapshots, incremental existing-attribute edits and safe scalar preview control reuse; conservative full-rebuild fallbacks.
+- End-to-end child-process/workbench, source-span, vector, journal and browser regression coverage.
+
+
 ## 0.2.0-alpha.1
 
 - Add reusable Authoring, Persistence and PreviewProtocol packages (13 libraries total).
