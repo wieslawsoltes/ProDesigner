@@ -1,0 +1,69 @@
+name: Materialize verified authoring update
+on:
+  push:
+    branches: [feat/authoring-recovery-isolated-preview]
+    paths: ['.authoring-update/**', '.github/workflows/apply-authoring-update.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'wieslawsoltes/ProDesigner' && github.ref == 'refs/heads/feat/authoring-recovery-isolated-preview'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify all source transactions before writing
+        shell: bash
+        run: |
+          git merge-base --is-ancestor d899e974fc0d29eb029e6ff7c8d174870a1de4c1 HEAD
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          root = pathlib.Path.cwd().resolve()
+          pending = {}
+          exact = {'.github/workflows/pages.yml', '.gitignore', 'CHANGELOG.md', 'Directory.Build.props', 'ProDesigner.slnx', 'README.md', 'SECURITY.md'}
+          for manifest in sorted(root.glob('.authoring-update/*.json')):
+              for item in json.loads(manifest.read_bytes().decode('utf-8')):
+                  relative = pathlib.PurePosixPath(item['path'])
+                  if relative.is_absolute() or '..' in relative.parts:
+                      raise RuntimeError('Invalid source path')
+                  if str(relative) not in exact and relative.parts[0] not in {'src','apps','tests','docs'}:
+                      raise RuntimeError('Unexpected source path: ' + item['path'])
+                  target = root.joinpath(*relative.parts)
+                  if not target.resolve().is_relative_to(root):
+                      raise RuntimeError('Source path escapes repository')
+                  before = target.read_bytes().decode('utf-8') if target.exists() else ''
+                  digest = lambda text: hashlib.sha256(text.encode('utf-8')).hexdigest()
+                  if digest(before) != item['before']:
+                      raise RuntimeError('Base checksum mismatch: ' + item['path'])
+                  edits = sorted(item['edits'], key=lambda edit: edit[0])
+                  cursor = 0
+                  for offset, length, replacement in edits:
+                      if offset < cursor or length < 0 or offset + length > len(before):
+                          raise RuntimeError('Invalid edit: ' + item['path'])
+                      cursor = offset + length
+                  after = before
+                  for offset, length, replacement in reversed(edits):
+                      after = after[:offset] + replacement + after[offset+length:]
+                  if digest(after) != item['after']:
+                      raise RuntimeError('Result checksum mismatch: ' + item['path'])
+                  if item['path'] in pending:
+                      raise RuntimeError('Duplicate source path')
+                  pending[item['path']] = after
+          if len(pending) != 63:
+              raise RuntimeError('Incomplete source update: ' + str(len(pending)))
+          for relative, source in pending.items():
+              target = root / relative
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(source.encode('utf-8'))
+          subprocess.run(['git','add','--',*pending.keys()],check=True)
+          print('All 63 source-file checksums verified.')
+          PY
+      - name: Commit to feature branch and remove one-time transport
+        run: |
+          git rm -r .authoring-update .github/workflows/apply-authoring-update.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: isolated previews, recoverable workspaces, source-safe authoring and animation round-trips'
+          git push origin HEAD:refs/heads/feat/authoring-recovery-isolated-preview
