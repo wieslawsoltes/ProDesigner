@@ -10,3 +10,6 @@ test-results/
 *.user
 *.suo
 .DS_Store
+
+*.prodesigner-lock
+*.prodesigner.tmp

@@ -5,8 +5,10 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.Controls.Templates;
 using ProDesigner.Animation;
 using ProDesigner.Core;
+using ProDesigner.Persistence;
 using ProDesigner.Design;
 using ProDesigner.Preview;
 using ProDesigner.Xaml;
@@ -23,7 +25,8 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
         public string? Path { get; set; }
         public string? ProjectPath { get; set; }
         public DesignerSession Session { get; } = session;
-        public AnimationClip Animation { get; } = new();
+        public AnimationClip Animation { get; set; } = new();
+        public string? DiskHash { get; set; }
         public string CodeBehind { get; set; } = "";
     }
     private readonly List<DocumentTab> _documents = [];
@@ -36,7 +39,14 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     private readonly PropertyInspector _inspector = new();
     private readonly TimelineEditor _timeline = new();
     private readonly StackPanel _tabs = new() { Orientation = Orientation.Horizontal, Spacing = 2 };
-    private readonly StackPanel _layers = new() { Spacing = 1 };
+    private sealed record LayerRow(string Id, string Name, int Depth, bool HasChildren, bool Expanded, bool Selected);
+    private readonly ListBox _layers = new() { Background = Brushes.Transparent, BorderThickness = new(0) };
+    private readonly HashSet<string> _collapsedLayers = [];
+    private bool _updatingLayers;
+    private sealed record SolutionRow(string Project, string ProjectPath, WorkspaceFile File);
+    private readonly ListBox _solutionFiles = new() { Background = Brushes.Transparent, FontSize = 11 };
+    private IReadOnlyList<SolutionRow> _solutionRows = [];
+    private readonly TextBox _solutionFilter = Field(watermark: "Filter solution files");
     private readonly StackPanel _navigation = new() { Spacing = 3 };
     private readonly StackPanel _toolbox = new() { Spacing = 2 };
     private readonly StackPanel _problems = new() { Spacing = 6, Margin = new(12) };
@@ -58,11 +68,12 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     public IReadOnlyList<DocumentTab> Documents => _documents;
     public DesignSurface Surface => _surface;
     public string ActiveDocumentName => _active.Name;
-    public DesignerWorkbench(IWorkspaceService? workspace = null, ICodeService? codeService = null, Func<TrustedPreviewRequest, Task<TrustedPreview>>? trustedPreview = null)
+    public DesignerWorkbench(IWorkspaceService? workspace = null, ICodeService? codeService = null, Func<TrustedPreviewRequest, Task<TrustedPreview>>? trustedPreview = null, IRecoveryStore? recovery = null, Func<TrustedPreviewRequest, CancellationToken, Task<IExternalPreview>>? externalPreview = null)
     {
-        _workspace = workspace; _codeService = codeService; _trustedPreview = trustedPreview;
+        _workspace = workspace; _codeService = codeService; _trustedPreview = trustedPreview; _recovery = recovery; _externalFactory = externalPreview;
         Classes.Add("studio"); Name = "DesignerWorkbench"; Focusable = true;
         BuildShell();
+        InitializeRecovery();
         foreach (var sample in Samples.Documents) _documents.Add(new(sample.Key, new DesignerSession(sample.Value)));
         var clip = _documents[0].Animation; var track = clip.GetTrack("RevenueCard", "Opacity"); track.SetKey(0, .15); track.SetKey(1, 1);
         SwitchDocument(_documents[0]);
@@ -71,8 +82,10 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
         _surface.Status += SetStatus; _editor.Status += SetStatus; _inspector.Status += SetStatus; _timeline.Status += SetStatus;
         _surface.ZoomChanged += z => _zoomLabel.Text = $"{z:P0}";
         _inspector.GenerateHandler += GenerateEventHandler;
-        _timeline.Seeked += (animation, time) => { foreach (var t in animation.Tracks) _surface.ApplyAnimation(t.Target, t.Property, t.Evaluate(time)); };
+        _timeline.Seeked += (animation, time) => { foreach (var t in animation.Tracks) _surface.ApplyAnimation(t.Target, t.Property, t.Evaluate(time)); foreach (var t in animation.ColorTracks) _surface.ApplyAnimationValue(t.Target, t.Property, t.Evaluate(time).ToString()); };
         _timeline.ExportRequested += ExportAnimation;
+        _timeline.ImportRequested += ImportAnimation;
+        _timeline.Changed += ScheduleRecovery;
         AddHandler(KeyDownEvent, KeyPressed, RoutingStrategies.Tunnel);
         AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => _surface.Fit(), DispatcherPriority.Loaded);
     }
@@ -85,16 +98,35 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
         var actions = Row(Button("⌘ K", "Open command palette", ShowCommandPalette), Button("Open", "Open XAML documents", () => _ = OpenDocumentsAsync()), Button("Save", "Save active document", () => _ = SaveDocumentAsync()), Button("▶ Preview", "Toggle interactive preview", TogglePreview, true));
         actions.Margin = new(8, 0, 14, 0); Place(title, actions, 0, 2); Place(_root, title, 0, 0, 5);
         var toolbar = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"), Background = Brush.Parse("#1B1D25") };
-        var tools = Row(Button("↖", "Select and move · V", () => _surface.SetInteractive(false)), Button("＋", "Insert Button", () => InsertControl("Button")), Button("T", "Insert TextBlock", () => InsertControl("TextBlock")), Button("□", "Insert Rectangle", () => InsertControl("Rectangle")), Button("○", "Insert Ellipse", () => InsertControl("Ellipse")), new Border { Width = 1, Height = 20, Background = Line, Margin = new Thickness(6,0) }, Button("↶", "Undo · Ctrl/Cmd Z", () => Execute("undo")), Button("↷", "Redo · Ctrl/Cmd Shift Z", () => Execute("redo")), Button("⫷", "Align left", () => Guard(() => _surface.Align(Alignment.Left))), Button("↔", "Distribute horizontally", () => Guard(() => _surface.Distribute(true))), Button("⇅", "Distribute vertically", () => Guard(() => _surface.Distribute(false))), Button("Devices", "Choose preview profiles", ShowProfiles), Button("Solution", "Open a trusted solution or project (desktop)", () => _ = OpenWorkspaceAsync()));
-        tools.Margin = new(12, 0); Place(toolbar, tools, 0, 0);
+        var tools = Row(Button("↖", "Select and move · V", () => _surface.SetInteractive(false)), Button("＋", "Insert Button", () => InsertControl("Button")), Button("T", "Insert TextBlock", () => InsertControl("TextBlock")), Button("□", "Insert Rectangle", () => InsertControl("Rectangle")), Button("○", "Insert Ellipse", () => InsertControl("Ellipse")), new Border { Width = 1, Height = 20, Background = Line, Margin = new Thickness(6,0) }, Button("↶", "Undo · Ctrl/Cmd Z", () => Execute("undo")), Button("↷", "Redo · Ctrl/Cmd Shift Z", () => Execute("redo")), Button("⫷", "Align left", () => Guard(() => _surface.Align(Alignment.Left))), Button("↔", "Distribute horizontally", () => Guard(() => _surface.Distribute(true))), Button("⇅", "Distribute vertically", () => Guard(() => _surface.Distribute(false))), Button("Design", "Resources, styles, templates, brushes and sample data", ShowAuthoringTools), Button("Path", "Edit selected vector geometry", ShowVectorEditor), Button("Devices", "Choose preview profiles", ShowProfiles), Button("Solution", "Open a trusted solution or project (desktop)", () => _ = OpenWorkspaceAsync()));
+        tools.Margin = new(12, 0); Place(toolbar, new ScrollViewer { Content = tools, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled }, 0, 0);
         var zoom = Row(Button("−", "Zoom out", () => _surface.SetZoom(_surface.Zoom / 1.2)), _zoomLabel, Button("＋", "Zoom in", () => _surface.SetZoom(_surface.Zoom * 1.2)), Button("Fit", "Fit artboards", _surface.Fit));
         zoom.Margin = new(0, 0, 12, 0); Place(toolbar, zoom, 0, 1); Place(_root, toolbar, 1, 0, 5);
         var left = new TabControl();
         var layersGrid = new Grid { RowDefinitions = RowDefinitions.Parse("Auto,Auto,*") };
-        _layerFilter.Margin = new(12, 10); Place(layersGrid, _layerFilter, 0, 0); Place(layersGrid, Box(_navigation, new(10)), 1, 0); Place(layersGrid, new ScrollViewer { Content = _layers }, 2, 0);
+        _layerFilter.Margin = new(12, 10); Place(layersGrid, _layerFilter, 0, 0); Place(layersGrid, Box(_navigation, new(10)), 1, 0); _layers.ItemTemplate = new FuncDataTemplate<LayerRow>((row, _) =>
+        {
+            if (row is null) return new TextBlock();
+            var container = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4 + Math.Min(row.Depth, 12) * 12, 1, 0, 1), Spacing = 5 };
+            if (row.HasChildren)
+            {
+                var toggle = Button(row.Expanded ? "⌄" : ">", "Expand or collapse " + row.Name, () => { if (!_collapsedLayers.Add(row.Id)) _collapsedLayers.Remove(row.Id); RefreshLayers(); });
+                toggle.Width = 20; toggle.MinHeight = 20; toggle.Padding = new Thickness(0); container.Children.Add(toggle);
+            }
+            else container.Children.Add(new Border { Width = 20 });
+            container.Children.Add(new TextBlock { Text = row.Name, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Foreground = row.Selected ? Brush.Parse("#C9BFF6") : Brush.Parse("#AEB5C9") });
+            return container;
+        }, true);
+        _layers.SelectionChanged += (_, _) => { if (!_updatingLayers && _layers.SelectedItem is LayerRow row) Session.Select(row.Id); };
+        Place(layersGrid, _layers, 2, 0);
         var search = Field(watermark: "Search controls"); search.Margin = new(12); search.TextChanged += (_, _) => RefreshToolbox(search.Text);
         var palette = new DockPanel(); DockPanel.SetDock(search, Dock.Top); palette.Children.Add(search); palette.Children.Add(new ScrollViewer { Content = _toolbox });
-        left.Items.Add(new TabItem { Header = "Layers", Content = layersGrid }); left.Items.Add(new TabItem { Header = "Assets", Content = palette });
+        _solutionFiles.ItemTemplate = new FuncDataTemplate<SolutionRow>((row, _) => row is null ? new TextBlock() : new TextBlock { Text = row.Project + "/" + row.File.Name, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis }, true);
+        _solutionFiles.DoubleTapped += (_, _) => { if (_solutionFiles.SelectedItem is SolutionRow row && row.File.Kind is ".xaml" or ".axaml") _ = OpenWorkspaceFileAsync(row.File, row.ProjectPath); };
+        _solutionFilter.TextChanged += (_, _) => _solutionFiles.ItemsSource = _solutionRows.Where(r => (r.Project + "/" + r.File.Name).Contains(_solutionFilter.Text ?? "", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var solutionPanel = new Grid { RowDefinitions = RowDefinitions.Parse("Auto,*") }; _solutionFilter.Margin = new(10);
+        Place(solutionPanel, _solutionFilter, 0, 0); Place(solutionPanel, _solutionFiles, 1, 0);
+        left.Items.Add(new TabItem { Header = "Layers", Content = layersGrid }); left.Items.Add(new TabItem { Header = "Assets", Content = palette }); left.Items.Add(new TabItem { Header = "Solution", Content = solutionPanel });
         Place(_root, left, 2, 0); Place(_root, new GridSplitter { ResizeDirection = GridResizeDirection.Columns, HorizontalAlignment = HorizontalAlignment.Stretch }, 2, 1);
         var tabBar = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"), Background = Brush.Parse("#20222B") };
         Place(tabBar, new ScrollViewer { Content = _tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden }, 0, 0);
@@ -115,16 +147,17 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     {
         _editor.Flush(); _timeline.Stop();
         if (_active is not null) { _active.Session.Changed -= DocumentChanged; _active.Session.SelectionChanged -= SelectionChanged; }
-        _active = document; _active.Session.Changed += DocumentChanged; _active.Session.SelectionChanged += SelectionChanged;
+        _collapsedLayers.Clear(); _active = document; _active.Session.Changed += DocumentChanged; _active.Session.SelectionChanged += SelectionChanged;
         _editor.Attach(Session); _surface.Attach(Session); _inspector.Attach(Session); _timeline.Attach(Session, document.Animation);
         RefreshTabs(); RefreshDocument();
     }
     private void DocumentChanged(DocumentChange change)
     {
-        RefreshTabs(); _renderDebounce.Stop(); _renderDebounce.Start();
+        RefreshTabs(); _renderDebounce.Stop(); _renderDebounce.Start(); ScheduleRecovery();
     }
     private void SelectionChanged()
     {
+        _ = RefreshProjectDiagnosticsAsync();
         _inspector.Rebuild(); RefreshLayers();
         if (!_editor.IsKeyboardFocusWithin && Session.Primary is { } node) _editor.Navigate(node.NameSpan.Start, node.NameSpan.Length);
     }
@@ -133,6 +166,7 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
         if (_disposed) return;
         _surface.Rebuild(); RefreshLayers(); _inspector.Rebuild(); RefreshProblems();
         _ = RefreshProjectDiagnosticsAsync();
+        _ = SynchronizeExternalPreviewAsync();
         _history.Children.Clear(); foreach (var item in Session.History.Take(80)) _history.Children.Add(Text("↶ " + item, 11, "#9AA3B9"));
         _statistics.Text = $"{Session.Tree.Elements.Count} nodes   •   parse {Session.LastParseMilliseconds:0.0} ms   •   v{Session.Version}   •   {_documents.Count} views";
         if (!Session.IsValid) SetStatus("XAML has errors. The last valid preview is retained; visual edits are paused.");
@@ -150,16 +184,19 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     }
     private void RefreshLayers()
     {
-        if (_active is null) return; _layers.Children.Clear(); var filter = _layerFilter.Text ?? "";
+        if (_active is null) return;
+        var filter = _layerFilter.Text ?? ""; var rows = new List<LayerRow>();
         foreach (var node in Session.Tree.Elements)
         {
-            if (!node.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase) && !node.LocalName.Contains(filter, StringComparison.OrdinalIgnoreCase)) continue;
-            var depth = node.Id.Count(c => c == '/');
-            var button = Button((node.Children.Count > 0 ? "⌄ " : "  ") + (node.LocalName == "TextBlock" ? "T  " : node.IsProperty ? "·  " : "◇  ") + node.DisplayName, node.Name, () => Session.Select(node.Id));
-            button.Classes.Add("layer"); button.Padding = new(10 + depth * 12, 5, 6, 5);
-            if (Session.Selection.Contains(node.Id)) button.Classes.Add("selected");
-            _layers.Children.Add(button);
+            if (filter.Length > 0 && !node.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase) && !node.LocalName.Contains(filter, StringComparison.OrdinalIgnoreCase)) continue;
+            var hidden = false;
+            if (filter.Length == 0) for (var parent = node.Parent; parent is not null; parent = parent.Parent) if (_collapsedLayers.Contains(parent.Id)) { hidden = true; break; }
+            if (hidden) continue;
+            rows.Add(new(node.Id, node.DisplayName, node.Id.Count(c => c == '/'), node.Children.Count > 0, !_collapsedLayers.Contains(node.Id), Session.Selection.Contains(node.Id)));
         }
+        _updatingLayers = true;
+        try { _layers.ItemsSource = rows; _layers.SelectedItem = rows.FirstOrDefault(r => Session.Primary?.Id == r.Id); }
+        finally { _updatingLayers = false; }
     }
     private void RefreshToolbox(string? filter)
     {
@@ -184,6 +221,11 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
         }
         if (diagnostics.Length == 0) _problems.Children.Add(Text("✓ No XAML or preview diagnostics", 12, "#9ACDAE"));
     }
+    private void SetSolutionFiles(IReadOnlyList<ProjectSummary> projects)
+    {
+        _solutionRows = projects.SelectMany(p => p.Files.Where(f => f.Kind is ".axaml" or ".xaml").Select(f => new SolutionRow(p.Name, p.Path, f))).ToArray();
+        _solutionFiles.ItemsSource = _solutionRows;
+    }
     public void SetStatus(string message) => _status.Text = message;
     private void Guard(Action action)
     {
@@ -192,6 +234,6 @@ public sealed partial class DesignerWorkbench : UserControl, IDisposable
     }
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; _renderDebounce.Stop(); _timeline.Stop(); _projectAnalysis?.Cancel(); _projectAnalysis?.Dispose(); _workspace?.Dispose();
+        if (_disposed) return; _disposed = true; _recoveryTimer.Stop(); _previewCancellation?.Cancel(); _ = StopExternalPreviewAsync(); _renderDebounce.Stop(); _timeline.Stop(); _projectAnalysis?.Cancel(); _projectAnalysis?.Dispose(); _workspace?.Dispose();
     }
 }

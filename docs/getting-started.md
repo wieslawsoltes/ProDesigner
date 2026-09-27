@@ -45,3 +45,23 @@ Continuous scalar easing is exported as Avalonia KeySpline segments and regressi
 | Escape | Close dialog / leave interactive mode |
 
 The inspector, editor, and desktop file picker retain their text-entry behavior. Not every shortcut from Figma, Blend, Visual Studio or Xcode is implemented.
+
+## Complete workspaces and recovery
+
+Open the command palette (Ctrl/Cmd+K) and choose **Save complete workspace** to export a `.prodesigner` file. It contains views, code-behind, pending/invalid text, scalar/color timeline data, sample data and preview configuration. **Open saved workspace** validates the complete snapshot before replacing tabs and offers to save the current workspace first.
+
+Desktop and browser hosts checkpoint after two seconds of editing inactivity. On the next launch, review the recovery dialog and choose Restore or Discard. Desktop journals are stored below the user's local application-data directory; browser journals are origin-local storage. Browsers may reject a checkpoint when storage quota is exhausted; the status bar reports the failure. Save a workspace file for durable portable backups. Recovery does not execute or trust stored projects.
+
+## Design-system, paint and vector tools
+
+The **Design** toolbar button opens Resources, Styles, Templates, Paint and Data. Resource upserts preserve unrelated resources; style updates preserve unmentioned setters and nested animation/style content. Create a ControlTheme resource and apply its StaticResource reference to a selection. Template composition accepts a visual fragment and writes a DataTemplate/ControlTemplate property element. For full style/template execution use the desktop isolated preview.
+
+Paint offers RGBA sliders, a color swatch/hex field and editable linear gradient stops. Add one `offset color` pair per line (offset 0–1). These operations write real brush/property objects; the bounded preview renders supported gradients.
+
+Insert **Path** from Assets, select it and click **Path**. Drag endpoints or Bézier handles, parse/edit M/L/C/Q/Z path data, and apply the final geometry as one source transaction. Arcs, shorthand commands and Boolean operations are not approximated or silently discarded.
+
+## Isolated preview and timeline updates
+
+The trusted runtime action now starts a supervised child process, not constructors in the workbench. Choose an available target framework when the loaded project advertises multiple targets. Valid XAML edits update the associated preview window live; malformed text retains its previous preview. **Stop isolated preview** cancels build/start/update operations and terminates the worker. Restart the preview to rebuild changed code. The child has your OS privileges, so trust is still mandatory.
+
+Animation **Import** lists representable named-target clips and diagnostic messages for unsupported source constructs. Color tracks accept #RRGGBB/#AARRGGBB. Custom imported splines and scalar/color keys persist in workspace files. The timeline's undo/redo controls have separate history from XAML. Source export remains explicit; importing unsupported playback semantics is rejected rather than changed.

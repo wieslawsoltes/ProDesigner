@@ -20,7 +20,7 @@ public sealed class XamlElement
     public string LocalName => Name[(Name.LastIndexOf(':') + 1)..];
     public bool IsProperty => LocalName.Contains('.');
     public string? Get(string name) => Attributes.FirstOrDefault(a => a.Name == name)?.Value;
-    public string DisplayName => Get("x:Name") ?? Get("Name") ?? LocalName;
+    public string DisplayName => XamlNames.Name(this) ?? LocalName;
     public IEnumerable<XamlElement> DescendantsAndSelf()
     {
         yield return this;
@@ -33,6 +33,7 @@ public sealed class XamlElement
 public sealed class XamlSyntaxTree
 {
     public const int MaximumLength = 8 * 1024 * 1024;
+    private readonly Dictionary<string, XamlElement> _index;
     public string Source { get; }
     public XamlElement Root { get; }
     public IReadOnlyList<XamlElement> Elements { get; }
@@ -40,9 +41,16 @@ public sealed class XamlSyntaxTree
     private XamlSyntaxTree(string source, XamlElement root)
     {
         Source = source; Root = root; Elements = root.DescendantsAndSelf().ToArray();
+        _index = Elements.ToDictionary(e => e.Id);
     }
-    public XamlElement? Find(string? id) => id is null ? null : Elements.FirstOrDefault(e => e.Id == id);
-    public XamlElement? At(int offset) => Elements.LastOrDefault(e => e.Span.Contains(offset));
+    public XamlElement? Find(string? id) => id is null ? null : _index.GetValueOrDefault(id);
+    public XamlElement? At(int offset)
+    {
+        var low = 0; var high = Elements.Count - 1; XamlElement? candidate = null;
+        while (low <= high) { var mid = low + (high - low) / 2; if (Elements[mid].Span.Start <= offset) { candidate = Elements[mid]; low = mid + 1; } else high = mid - 1; }
+        while (candidate is not null && !candidate.Span.Contains(offset)) candidate = candidate.Parent;
+        return candidate;
+    }
     public static XamlSyntaxTree Parse(string source)
     {
         ArgumentNullException.ThrowIfNull(source);

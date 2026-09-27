@@ -12,11 +12,19 @@ MSBuild evaluation can execute imported tasks/targets. The desktop UI therefore 
 
 ## Runtime preview
 
-The desktop runtime preview invokes Avalonia's runtime XAML loader after a separate warning. It runs inside the desktop process and can execute XAML constructors/extensions. It is **not process-isolated**. Do not use it with untrusted files. The browser does not expose this capability. The runtime-preview trust action can restore/build the associated project and load its assemblies. SDK processes use argument-list invocation, bounded output and a timeout/cancellation process-tree kill. Collectible assembly contexts are not security boundaries. Constructors, code-behind and dependencies remain fully trusted code.
+The default desktop runtime preview runs in a supervised child process after an explicit trust action. Build/restore also runs SDK subprocesses with bounded logs, cancellation and timeout termination. IPC uses a per-session random, current-user-only named pipe with length-prefixed JSON frames capped at 16 MiB; application stdout/stderr is drained separately and never parsed as protocol data. A blocked/crashed worker can be terminated without executing preview constructors inside the workbench process. In-process RuntimePreviewEngine remains a reusable library API for hosts that deliberately choose it.
+
+**Process isolation is not an OS permissions sandbox.** The child and project build have the user's filesystem/network privileges and can execute arbitrary constructors, markup extensions, converters, code-behind and imported MSBuild targets. Do not trust unknown projects. Collectible assembly contexts are lifecycle aids, not security boundaries. The browser has neither the runtime worker nor project-code execution.
+
+## Recovery and file writes
+
+Workspace envelopes have SHA-256 integrity checks and a versioned source-generated JSON schema. Checksums detect corruption; they do not authenticate a workspace author. Workspace import and recovery never restore a trust grant or automatically load assemblies. Source text, code-behind and document/project paths may be present in the local journal; treat `.prodesigner` files as sensitive project data.
+
+Desktop recovery uses two generations and atomic same-directory replacement. Desktop XAML saves compare an expected content hash and use a stable advisory lock for cooperating designer writers. This is optimistic conflict detection, not a filesystem-wide compare-and-swap against arbitrary applications that ignore the lock. Browser local-storage quota errors are surfaced. A power failure or browser termination can lose changes since the last checkpoint. The browser exposes workspace import/export and local editing commands to same-origin scripts; do not co-host untrusted scripts.
 
 ## Local data
 
-File import/export uses user-selected files. There is no telemetry, collaboration server, remote upload or credential store in the application. The WebAssembly runtime's downloaded application resources are static site assets. The browser automation bridge exposes local document commands to scripts on the same origin; do not host unrelated untrusted scripts with the app.
+File import/export uses user-selected files. Recovery snapshots remain local. There is no telemetry, collaboration server, remote upload or credential store in the application. The WebAssembly runtime's downloaded application resources are static site assets. The browser automation bridge exposes local document commands to scripts on the same origin; do not host unrelated untrusted scripts with the app.
 
 ## Automation
 

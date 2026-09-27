@@ -24,6 +24,7 @@ public sealed class EditorPane : UserControl
     private bool _synchronizing;
     public event Action<string>? Status;
     public TextEditor Editor => _editor;
+    public IReadOnlyList<ProDesigner.Core.CompletionItem> ProjectCompletions { get; set; } = [];
     public EditorPane()
     {
         _editor = new TextEditor
@@ -108,15 +109,16 @@ public sealed class EditorPane : UserControl
     {
         var completion = new CompletionWindow(_editor.TextArea);
         var items = ControlCatalog.Items.Select(i => i.Name).Concat(ControlCatalog.CommonProperties).Concat(["{Binding }", "{StaticResource }", "{DynamicResource }", "UserControl", "Styles", "ControlTheme", "DataTemplate"]);
-        foreach (var item in items.Distinct().OrderBy(s => s)) completion.CompletionList.CompletionData.Add(new Completion(item));
+        foreach (var item in ProjectCompletions) completion.CompletionList.CompletionData.Add(new Completion(item.Label, item.Detail));
+        foreach (var item in items.Except(ProjectCompletions.Select(i => i.Label)).Distinct().OrderBy(s => s)) completion.CompletionList.CompletionData.Add(new Completion(item));
         completion.Show();
     }
-    private sealed class Completion(string text) : ICompletionData
+    private sealed class Completion(string text, string? detail = null) : ICompletionData
     {
         public IImage? Image => null;
         public string Text => text;
         public object Content => text;
-        public object Description => "Avalonia XAML: " + text;
+        public object Description => detail is null ? "Avalonia XAML: " + text : text + " · " + detail;
         public double Priority => 0;
         public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs) => textArea.Document.Replace(completionSegment, text);
     }

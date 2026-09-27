@@ -5,22 +5,26 @@ using ProDesigner.Xaml;
 
 namespace ProDesigner.Animation;
 
-public enum EasingKind { Linear, EaseIn, EaseOut, EaseInOut, Step }
-public sealed record Keyframe(double Time, double Value, EasingKind Easing = EasingKind.EaseInOut);
+public enum EasingKind { Linear, EaseIn, EaseOut, EaseInOut, Step, Custom }
+public sealed record Keyframe(double Time, double Value, EasingKind Easing = EasingKind.EaseInOut, CubicSpline? Spline = null);
 public sealed class AnimationTrack
 {
     private readonly List<Keyframe> _keys = [];
+    public event Action? Changed;
     public string Target { get; }
     public string Property { get; }
     public IReadOnlyList<Keyframe> Keys => _keys;
     public AnimationTrack(string target, string property) { XmlConvert.VerifyNCName(target); XmlConvert.VerifyName(property); Target = target; Property = property; }
-    public void SetKey(double time, double value, EasingKind easing = EasingKind.EaseInOut)
+    public void SetKey(double time, double value, EasingKind easing = EasingKind.EaseInOut, CubicSpline? spline = null)
     {
         if (!double.IsFinite(time) || time < 0 || time > 1 || !double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(time));
+        if (!Enum.IsDefined(easing)) throw new ArgumentOutOfRangeException(nameof(easing));
+        if (easing == EasingKind.Custom && spline is null) throw new ArgumentException("Custom easing needs a spline.");
+        spline?.Validate();
         _keys.RemoveAll(k => Math.Abs(k.Time - time) < 0.000001);
-        _keys.Add(new(time, value, easing)); _keys.Sort((a, b) => a.Time.CompareTo(b.Time));
+        _keys.Add(new(time, value, easing, spline)); _keys.Sort((a, b) => a.Time.CompareTo(b.Time)); Changed?.Invoke();
     }
-    public void RemoveKey(double time) => _keys.RemoveAll(k => Math.Abs(k.Time - time) < 0.000001);
+    public void RemoveKey(double time) { if (_keys.RemoveAll(k => Math.Abs(k.Time - time) < 0.000001) > 0) Changed?.Invoke(); }
     public double Evaluate(double time)
     {
         if (_keys.Count == 0) return 0;
@@ -30,7 +34,7 @@ public sealed class AnimationTrack
         {
             if (time > _keys[i].Time) continue;
             var a = _keys[i - 1]; var b = _keys[i]; var t = (time - a.Time) / (b.Time - a.Time);
-            return a.Value + (b.Value - a.Value) * Easing.Apply(t, b.Easing);
+            return a.Value + (b.Value - a.Value) * (b.Spline?.Evaluate(t) ?? Easing.Apply(t, b.Easing));
         }
         return _keys[^1].Value;
     }
@@ -60,11 +64,18 @@ public sealed class AnimationClip
     public double DurationSeconds { get; set; } = 1;
     public bool Loop { get; set; }
     public List<AnimationTrack> Tracks { get; } = [];
+    public List<ColorAnimationTrack> ColorTracks { get; } = [];
     public AnimationTrack GetTrack(string target, string property)
     {
         var track = Tracks.FirstOrDefault(t => t.Target == target && t.Property == property);
         if (track is not null) return track;
         track = new(target, property); Tracks.Add(track); return track;
+    }
+    public ColorAnimationTrack GetColorTrack(string target, string property)
+    {
+        var track = ColorTracks.FirstOrDefault(t => t.Target == target && t.Property == property);
+        if (track is not null) return track;
+        track = new(target, property); ColorTracks.Add(track); return track;
     }
     public string ToAvaloniaStyles()
     {
@@ -89,22 +100,29 @@ public sealed class AnimationClip
                         AppendKey(sb, track.Property, (previous.Time + key.Time) / 2, (previous.Value + key.Value) / 2, EasingKind.EaseIn);
                         AppendKey(sb, track.Property, key.Time, key.Value, EasingKind.EaseOut);
                     }
-                    else AppendKey(sb, track.Property, key.Time, key.Value, index == 0 ? EasingKind.Linear : key.Easing);
+                    else AppendKey(sb, track.Property, key.Time, key.Value, index == 0 ? EasingKind.Linear : key.Easing, key.Spline);
                 }
                 sb.AppendLine("    </Animation>");
             }
             sb.AppendLine("  </Style.Animations>\n</Style>");
         }
+        foreach (var track in ColorTracks)
+        {
+            sb.AppendLine($"<Style Selector=\"#{XamlEdits.Escape(track.Target)}\"><Style.Animations><Animation Duration=\"{duration}\" IterationCount=\"{(Loop ? "INFINITE" : "1")}\" FillMode=\"Forward\">");
+            foreach (var key in track.Keys)
+                sb.AppendLine($"<KeyFrame Cue=\"{(key.Time * 100).ToString("R", CultureInfo.InvariantCulture)}%\" KeySpline=\"{key.Spline ?? CubicSpline.Linear}\"><Setter Property=\"{XamlEdits.Escape(track.Property)}\" Value=\"{key.Value}\" /></KeyFrame>");
+            sb.AppendLine("</Animation></Style.Animations></Style>");
+        }
         return sb.ToString();
     }
-    private static void AppendKey(StringBuilder builder, string property, double time, double value, EasingKind easing)
+    private static void AppendKey(StringBuilder builder, string property, double time, double value, EasingKind easing, CubicSpline? custom = null)
     {
-        var spline = easing switch
+        var spline = custom?.ToString() ?? (easing switch
         {
             EasingKind.EaseIn => "0.3333333333333333,0,0.6666666666666666,0",
             EasingKind.EaseOut => "0.3333333333333333,1,0.6666666666666666,1",
             _ => "0,0,1,1"
-        };
+        });
         builder.AppendLine($"      <KeyFrame Cue=\"{(time * 100).ToString("0.########", CultureInfo.InvariantCulture)}%\" KeySpline=\"{spline}\">");
         builder.AppendLine($"        <Setter Property=\"{XamlEdits.Escape(property)}\" Value=\"{value.ToString("R", CultureInfo.InvariantCulture)}\" />");
         builder.AppendLine("      </KeyFrame>");

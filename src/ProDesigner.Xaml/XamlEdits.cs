@@ -25,10 +25,12 @@ public static class XamlEdits
         if (element.Parent is null) throw new InvalidOperationException("The document root cannot be deleted.");
         return new(element.Span, "", tree.Source.Substring(element.Span.Start, element.Span.Length));
     }
-    public static TextEdit AppendChild(XamlSyntaxTree tree, XamlElement parent, string fragment)
+    public static TextEdit AppendChild(XamlSyntaxTree tree, XamlElement parent, string fragment, IReadOnlyDictionary<string, string>? extraNamespaces = null)
     {
         // Parse in the root namespace context before inserting. No DTDs or external entities are permitted.
-        var aliases = string.Join(" ", tree.Root.Attributes.Where(a => a.Name == "xmlns" || a.Name.StartsWith("xmlns:", StringComparison.Ordinal)).Select(a => $"{a.Name}=\"{Escape(a.Value)}\""));
+        var namespaces = new Dictionary<string, string>(XamlNames.Namespaces(parent));
+        if (extraNamespaces is not null) foreach (var pair in extraNamespaces) namespaces[pair.Key] = pair.Value;
+        var aliases = string.Join(" ", namespaces.Select(a => $"{a.Key}=\"{Escape(a.Value)}\""));
         XamlSyntaxTree.Parse($"<Fragment {aliases}>{fragment}</Fragment>");
         var indentation = Indent(tree.Source, parent.Span.Start);
         var nl = tree.NewLine;
@@ -44,30 +46,8 @@ public static class XamlEdits
         if (!element.SelfClosing) edits.Add(new(new(element.CloseSpan.Start + 2, element.Name.Length), type, element.Name));
         return edits;
     }
-    public static TextEdit Duplicate(XamlSyntaxTree tree, XamlElement element)
-    {
-        if (element.Parent is null) throw new InvalidOperationException("The root cannot be duplicated.");
-        var fragment = tree.Source.Substring(element.Span.Start, element.Span.Length);
-        var taken = tree.Elements.Select(e => e.Get("x:Name") ?? e.Get("Name")).Where(x => x is not null).ToHashSet();
-        var localEdits = new List<TextEdit>();
-        foreach (var node in element.DescendantsAndSelf())
-        {
-            var name = node.Attributes.FirstOrDefault(a => a.Name is "x:Name" or "Name");
-            if (name is null) continue;
-            var suffix = 2;
-            var unique = name.Value + "Copy";
-            while (!taken.Add(unique)) unique = name.Value + "Copy" + suffix++;
-            localEdits.Add(new(new(name.ValueSpan.Start - element.Span.Start, name.ValueSpan.Length), Escape(unique, name.Quote)));
-        }
-        fragment = EditApplication.Apply(fragment, localEdits);
-        return new(new(element.Span.End, 0), tree.NewLine + Indent(tree.Source, element.Span.Start) + fragment);
-    }
-    public static IReadOnlyList<TextEdit> Reparent(XamlSyntaxTree tree, XamlElement element, XamlElement target)
-    {
-        if (element.Parent is null || target == element || element.DescendantsAndSelf().Contains(target))
-            throw new InvalidOperationException("Reparenting would create a cycle or move the document root.");
-        return [Delete(tree, element), AppendChild(tree, target, tree.Source.Substring(element.Span.Start, element.Span.Length))];
-    }
+    public static TextEdit Duplicate(XamlSyntaxTree tree, XamlElement element) => XamlNames.Duplicate(tree, [element]).Single();
+    public static IReadOnlyList<TextEdit> Reparent(XamlSyntaxTree tree, XamlElement element, XamlElement target) => XamlNames.Reparent(tree, element, target);
     public static string Indent(string source, int position)
     {
         var start = source.LastIndexOf('\n', Math.Max(0, position - 1));

@@ -59,3 +59,13 @@ Current limitations are explicit: full-document parsing, full preview rebuilds, 
 3. Playwright boot and command tests over the actual WebAssembly application, with screenshots and traces.
 
 The test bridge calls the same workbench/session commands as the UI. It does not emulate the runtime. Full pointer/keyboard matrix testing, golden image comparison, screen-reader audits, memory/performance budgets and large-solution fixtures are still required for production qualification.
+
+## 0.2 extension architecture
+
+`ProDesigner.Authoring` builds targeted CST transactions for resources, selectors, themes and object-valued properties; its geometry model handles explicit Move/Line/Quadratic/Cubic/Close segments. `FragmentImporter` prepares imported fragments using their inherited namespace context and hoists declarations to the root required by Avalonia's runtime compiler. Conflicting aliases inside value tokens are rejected rather than rewritten indiscriminately. `MarkupReferences` tokenizes nested extensions and quoted arguments, restricting name rewrites to supported Binding/Reference syntax.
+
+`ProDesigner.Persistence` serializes a checksummed, versioned workspace envelope using source-generated System.Text.Json metadata, preserving trimming compatibility in WebAssembly. Recovery stores implement a shared host contract. The desktop file store performs same-directory atomic replacement, optimistic content-hash checking and cooperative writer locking. Import constructs and validates all tabs before swapping the workbench document set.
+
+`ProDesigner.PreviewProtocol` owns length-prefixed named-pipe framing and process supervision. The desktop executable starts a separate minimal Avalonia application in worker mode before initializing the normal workbench/MSBuild services. Workers receive already-authorized requests, load trusted project assemblies and send revision-matched success/error replies. A failed parse retains the old preview; a hung/crashed process is terminated. Live changes to the associated document are serialized and coalesced, while C# recompilation/relaunch still requires a new preview action. This is crash containment, not an OS sandbox.
+
+The layer view uses a virtualized ListBox over flattened expand/collapse rows. Source-node lookup uses a dictionary, and offset lookup uses binary search followed by ancestor traversal. Visual transactions map selection through their text edits. Full immutable/incremental syntax identity and incremental preview diffing remain future work.

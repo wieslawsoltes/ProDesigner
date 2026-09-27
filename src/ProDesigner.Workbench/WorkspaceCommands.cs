@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.Highlighting;
 using ProDesigner.Core;
+using ProDesigner.Persistence;
 using ProDesigner.Design;
 using ProDesigner.Xaml;
 using static ProDesigner.Workbench.StudioControls;
@@ -43,7 +44,7 @@ public sealed partial class DesignerWorkbench
         if (existing is not null) { SwitchDocument(existing); return; }
         var session = new DesignerSession("<UserControl xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" />");
         session.SetSource(text, "Open document"); session.MarkSaved();
-        var document = new DocumentTab(name, session) { Path = path }; _documents.Add(document); SwitchDocument(document);
+        var document = new DocumentTab(name, session) { Path = path, DiskHash = path is null ? null : WorkspaceCodec.Hash(text) }; _documents.Add(document); SwitchDocument(document);
     }
     public async Task SaveDocumentAsync()
     {
@@ -54,8 +55,14 @@ public sealed partial class DesignerWorkbench
             var file = await provider.SaveFilePickerAsync(new FilePickerSaveOptions { Title = "Save Avalonia view", SuggestedFileName = document.Name, DefaultExtension = "axaml", FileTypeChoices = [new FilePickerFileType("Avalonia XAML") { Patterns = ["*.axaml"] }] });
             if (file is null) return;
             var source = document.Session.Source;
-            await using var stream = await file.OpenWriteAsync(); if (stream.CanSeek) stream.SetLength(0);
-            await using (var writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true)) { await writer.WriteAsync(source); await writer.FlushAsync(); }
+            var local = file.TryGetLocalPath();
+            if (local is not null)
+                document.DiskHash = await AtomicFileStore.WriteAsync(local, source, string.Equals(local, document.Path, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? document.DiskHash : null);
+            else
+            {
+                await using var stream = await file.OpenWriteAsync(); if (stream.CanSeek) stream.SetLength(0);
+                await using var writer = new StreamWriter(stream, new UTF8Encoding(false)); await writer.WriteAsync(source); await writer.FlushAsync();
+            }
             document.Name = file.Name; document.Path = file.TryGetLocalPath();
             if (source == document.Session.Source) document.Session.MarkSaved();
             RefreshTabs(); SetStatus("Saved " + file.Name);
@@ -81,9 +88,11 @@ public sealed partial class DesignerWorkbench
         {
             SetStatus("Loading project graph and resolving metadata…");
             var projects = await Task.Run(() => _workspace!.OpenAsync(path, true));
+            SetSolutionFiles(projects);
             var content = new StackPanel { Spacing = 12 };
             foreach (var project in projects)
             {
+                _frameworks[project.Path] = project.Frameworks.ToArray();
                 content.Children.Add(Text(project.Name + "  ·  " + string.Join(", ", project.Frameworks), 14));
                 content.Children.Add(new TextBlock { Text = $"{project.ProjectReferences.Count} project references · {project.Packages.Count} NuGet references", FontSize = 11, Foreground = Brush.Parse("#929DB5") });
                 foreach (var file in project.Files.Where(f => f.Kind is ".axaml" or ".xaml"))
@@ -111,13 +120,16 @@ public sealed partial class DesignerWorkbench
     private async Task RefreshProjectDiagnosticsAsync()
     {
         _projectAnalysis?.Cancel(); _projectAnalysis?.Dispose(); _projectAnalysis = null;
-        if (_workspace is null || _active.ProjectPath is null || !Session.IsValid) return;
-        var document = _active; var version = document.Session.Version; var source = document.Session.Source;
+        if (_workspace is null || _active.ProjectPath is null || !Session.IsValid) { _editor.ProjectCompletions = []; _inspector.ProjectProperties = []; return; }
+        var document = _active; var version = document.Session.Version; var source = document.Session.Source; var offset = Session.Primary?.NameSpan.Start ?? 0;
         var cancellation = new CancellationTokenSource(); _projectAnalysis = cancellation;
         try
         {
             var diagnostics = await Task.Run(() => _workspace.AnalyzeXamlAsync(document.ProjectPath, source, cancellation.Token), cancellation.Token);
             if (_disposed || cancellation.IsCancellationRequested || document != _active || document.Session.Version != version) return;
+            var completion = await _workspace.GetXamlCompletionsAsync(document.ProjectPath, source, offset, cancellation.Token);
+            if (_disposed || cancellation.IsCancellationRequested || document != _active || document.Session.Version != version) return;
+            _editor.ProjectCompletions = completion; _inspector.ProjectProperties = completion; if (!_inspector.IsKeyboardFocusWithin) _inspector.Rebuild();
             foreach (var diagnostic in diagnostics.Take(100))
             {
                 var button = Button($"{diagnostic.Code}   {diagnostic.Message}", diagnostic.Message, () => { _bottom.SelectedIndex = 0; _editor.Navigate(diagnostic.Offset, diagnostic.Length); });
@@ -147,7 +159,7 @@ public sealed partial class DesignerWorkbench
         var diagnostic = Text("C# code-behind", 11, "#98A4BB");
         editor.TextChanged += (_, _) =>
         {
-            document.CodeBehind = editor.Text;
+            document.CodeBehind = editor.Text; ScheduleRecovery();
             var issues = _codeService?.Validate(editor.Text); diagnostic.Text = issues is null ? "Roslyn diagnostics require the desktop host." : issues.Count == 0 ? "✓ Roslyn: no syntax diagnostics" : string.Join("\n", issues.Take(3).Select(d => d.Message));
         };
         ShowDialog(document.Name + ".cs", Column(editor, diagnostic, Button("Save code-behind", "Save the companion C# source", () => _ = SaveCodeBehindAsync(document), true)));
@@ -166,10 +178,13 @@ public sealed partial class DesignerWorkbench
     }
     private void ShowTrustedPreview()
     {
-        if (_trustedPreview is null) { SetStatus("Runtime XAML execution is desktop-only. The browser uses the non-executing built-in preview."); return; }
-        ShowDialog("Build and execute trusted XAML?", Column(new TextBlock
+        if (_trustedPreview is null && _externalFactory is null) { SetStatus("Runtime XAML execution is desktop-only. The browser uses the non-executing built-in preview."); return; }
+        var framework = new ComboBox { ItemsSource = _active.ProjectPath is not null && _frameworks.TryGetValue(_active.ProjectPath, out var targets) ? targets : Array.Empty<string>(), SelectedIndex = 0 };
+        framework.SelectionChanged += (_, _) => _chosenFramework = framework.SelectedItem?.ToString();
+        _chosenFramework = framework.SelectedItem?.ToString();
+        ShowDialog("Build and execute trusted XAML?", Column(framework, new TextBlock
         {
-            Text = "Runtime preview can restore/build the selected project and execute its constructors, code-behind, converters, and markup extensions. It runs in this desktop process, not a security sandbox. Continue only for a project and dependencies you trust.", TextWrapping = TextWrapping.Wrap
+            Text = "Runtime preview can restore/build the selected project and execute its constructors, code-behind, converters, and markup extensions. It runs in a supervised separate process with the same OS permissions; it is not an OS security sandbox. Continue only for a project and dependencies you trust.", TextWrapping = TextWrapping.Wrap
         }, Button("Run trusted runtime preview", "Build this project and execute its XAML", () => { _overlay.IsVisible = false; _ = OpenTrustedPreviewAsync(); }, true)));
     }
     private async Task OpenTrustedPreviewAsync()
@@ -177,6 +192,16 @@ public sealed partial class DesignerWorkbench
         try
         {
             _editor.Flush(); var document = _active;
+            if (_externalFactory is not null)
+            {
+                await StopExternalPreviewAsync(); _previewCancellation?.Dispose(); _previewCancellation = new CancellationTokenSource();
+                SetStatus("Building and starting isolated preview. Use Stop isolated preview to cancel.");
+                var token = _previewCancellation.Token;
+                var external = await _externalFactory(new(document.Session.Source, document.Path, document.ProjectPath, true, _chosenFramework), token);
+                if (token.IsCancellationRequested) { await external.DisposeAsync(); return; }
+                _externalPreview = external; _previewDocument = document; _previewRevision = document.Session.Version;
+                SetStatus("Isolated project preview connected · valid XAML edits update its window live."); return;
+            }
             SetStatus(document.ProjectPath is null ? "Loading trusted XAML…" : "Restoring and building the trusted project…");
             var preview = await _trustedPreview!(new(document.Session.Source, document.Path, document.ProjectPath, Trusted: true));
             var window = new Window { Title = "ProDesigner · trusted project preview", Width = 1000, Height = 720, Content = preview.Root };

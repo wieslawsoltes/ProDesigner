@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/Libraries/">
+    <Project Path="src/ProDesigner.PreviewProtocol/ProDesigner.PreviewProtocol.csproj" />
+    <Project Path="src/ProDesigner.Persistence/ProDesigner.Persistence.csproj" />
+    <Project Path="src/ProDesigner.Authoring/ProDesigner.Authoring.csproj" />
     <Project Path="src/ProDesigner.Core/ProDesigner.Core.csproj" />
     <Project Path="src/ProDesigner.Xaml/ProDesigner.Xaml.csproj" />
     <Project Path="src/ProDesigner.Design/ProDesigner.Design.csproj" />
@@ -13,6 +16,9 @@
   </Folder>
   <Folder Name="/Applications/">
     <Project Path="apps/ProDesigner.Desktop/ProDesigner.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/Fixtures/">
+    <Project Path="tests/Fixtures/PreviewProject/PreviewProject.csproj" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/ProDesigner.Tests/ProDesigner.Tests.csproj" />

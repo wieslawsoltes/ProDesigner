@@ -9,7 +9,13 @@ using ProDesigner.Workbench;
 namespace ProDesigner.Browser;
 public static partial class Program
 {
-    public static Task Main(string[] args) => AppBuilder.Configure<DesignerApplication>().StartBrowserAppAsync("out");
+    public static Task Main(string[] args)
+    {
+        DesignerApplication.RecoveryFactory = () => new BrowserRecoveryStore();
+        return AppBuilder.Configure<DesignerApplication>().StartBrowserAppAsync("out");
+    }
+    [JSExport] public static string ExportWorkspace() => DesignerApplication.Workbench!.ExportWorkspace();
+    [JSExport] public static void ImportWorkspace(string json) => DesignerApplication.Workbench!.ImportWorkspace(json);
     [JSExport]
     public static string Snapshot()
     {

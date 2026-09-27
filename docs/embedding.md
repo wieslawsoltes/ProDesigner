@@ -48,3 +48,11 @@ Each src project is independently packable. Do not distribute private signing ma
 `ProDesigner.Runtime.RuntimePreviewEngine.Load` accepts a trusted source request plus an optional compiled assembly path. Call it on the Avalonia UI thread. Keep its `RuntimePreviewLease` alive while displaying the returned control; dispose the lease when its window closes. It resolves managed/native project dependencies and shares Avalonia host assemblies. Collectible contexts are lifecycle aids, not security boundaries or guaranteed immediate unloading.
 
 `ProDesigner.Roslyn.XamlCompilationService.Analyze` combines the source-preserving tree with a Roslyn Compilation, returning source-spanned diagnostics and bound member descriptors. This validates project types/properties/events; it does not replace all Avalonia compiler transforms or markup-extension value semantics.
+
+## Persistence and process supervision (0.2)
+
+Reference `ProDesigner.Persistence` for WorkspaceCodec, ClipState, AtomicFileStore and IRecoveryStore. WorkspaceCodec uses source-generated JSON metadata and works in trimmed WebAssembly. It preserves malformed editing text intentionally; restore a DesignerSession from a valid placeholder, then set its source and saved baseline separately. A SHA-256 checksum is integrity protection, not authorization.
+
+Reference `ProDesigner.PreviewProtocol` for PreviewProcessClient and PreviewWire. Start a host executable supporting `--preview-worker <pipe-name>`, send explicitly trusted requests, and dispose the client when its owner closes. PreviewWire limits frame allocation and does not use stdout as an IPC transport. Host-specific code must keep project execution separate from read-only metadata operations.
+
+DesignerApplication accepts RecoveryFactory and ExternalPreviewFactory in addition to the earlier optional host services. DesignerWorkbench exposes CaptureWorkspace, ExportWorkspace, ImportWorkspace and SaveRecoveryAsync. VectorEditor is separately instantiable and emits committed geometry strings. XamlAuthoring and FragmentImporter can be used without any Avalonia UI dependency.
